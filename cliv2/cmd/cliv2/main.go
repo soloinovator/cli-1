@@ -95,7 +95,7 @@ func MainWithErrorCode(envVariables EnvironmentVariables, args []string) int {
 		return cliv2.SNYK_EXIT_CODE_ERROR
 	}
 
-	wrapperProxy.SetUpstreamProxy(envVariables.ProxyAddr)
+	wrapperProxy.SetUpStreamProxyFromUrl(envVariables.ProxyAddr)
 	wrapperProxy.SetUpstreamProxyAuthentication(envVariables.ProxyAuthenticationMechanism)
 
 	port, err := wrapperProxy.Start()
