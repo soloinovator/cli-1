@@ -74,8 +74,8 @@ export interface Options {
   strictOutOfSync?: boolean;
   // Used only with the IaC mode & Docker plugin. Allows requesting some experimental/unofficial features.
   experimental?: boolean;
-  // Used with the Docker plugin only. Allows application scanning.
-  'app-vulns'?: boolean;
+  // Used with the Docker plugin only. Disables application scanning.
+  'exclude-app-vulns'?: boolean;
   debug?: boolean;
   sarif?: boolean;
   'group-issues'?: boolean;
