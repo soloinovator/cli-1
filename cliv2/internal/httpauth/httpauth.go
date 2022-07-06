@@ -22,6 +22,7 @@ const (
 	Done        AuthenticationState = iota
 	Error       AuthenticationState = iota
 	Cancel      AuthenticationState = iota
+	Close       AuthenticationState = iota
 )
 
 const (
@@ -31,10 +32,24 @@ const (
 )
 
 type AuthenticationHandler struct {
-	SpnegoProvider SpnegoProvider
+	spnegoProvider SpnegoProvider
 	Mechanism      AuthenticationMechanism
 	State          AuthenticationState
 	cycleCount     int
+}
+
+func NewHandler(mechanism AuthenticationMechanism) *AuthenticationHandler {
+	a := &AuthenticationHandler{
+		spnegoProvider: SpenegoProviderInstance(), // TODO: don't for get to call .Close() on this
+		Mechanism:      mechanism,
+		State:          Initial,
+	}
+	return a
+}
+
+func (a *AuthenticationHandler) Close() {
+	a.spnegoProvider.Close()
+	a.State = Close
 }
 
 func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToken string) (string, error) {
@@ -52,7 +67,7 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 			var token string
 			var done bool
 
-			token, done, err = a.SpnegoProvider.GetSPNEGOToken(url, responseToken)
+			token, done, err = a.spnegoProvider.GetSPNEGOToken(url, responseToken)
 			if err != nil {
 				a.State = Error
 				return "", err
@@ -76,7 +91,7 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 }
 
 func (a *AuthenticationHandler) IsStopped() bool {
-	return (a.State == Done || a.State == Error || a.State == Cancel || a.cycleCount >= maxCycleCount)
+	return (a.State == Done || a.State == Error || a.State == Cancel || a.State == Close || a.cycleCount >= maxCycleCount)
 }
 
 func (a *AuthenticationHandler) Reset() {

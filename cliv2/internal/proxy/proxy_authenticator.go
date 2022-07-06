@@ -33,11 +33,8 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 
 	if p.acceptedProxyAuthMechanism != httpauth.NoAuth {
 		if proxyURL != nil {
-			authHandler := &httpauth.AuthenticationHandler{
-				SpnegoProvider: httpauth.SpenegoProviderInstance(), // TODO: don't for get to call .Close() on this
-				Mechanism:      p.acceptedProxyAuthMechanism,
-				State:          httpauth.Initial,
-			}
+			authHandler := httpauth.NewHandler(p.acceptedProxyAuthMechanism)
+			defer authHandler.Close()
 
 			p.debugLogger.Println("Proxy Address:", proxyURL)
 			p.debugLogger.Printf("Connection to %s from %s via %s\n", target, connection.LocalAddr(), connection.RemoteAddr())
@@ -53,8 +50,6 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 					if len(token) > 0 {
 						proxyConnectHeader.Add(httpauth.ProxyAuthorizationKey, token)
 						p.debugLogger.Printf("> %s: %s\n", httpauth.ProxyAuthorizationKey, token)
-					} else {
-						p.debugLogger.Printf("CONNECT Header NOT added \"%s\" (empty)\n", httpauth.ProxyAuthorizationKey)
 					}
 
 					// send connect
