@@ -5,16 +5,16 @@ import (
 	"net/url"
 )
 
-type AuthenticationMechanism int
+type AuthenticationMechanism string
 type AuthenticationState int
 
 const maxCycleCount int = 3
 
 const (
-	NoAuth           AuthenticationMechanism = iota
-	Mock             AuthenticationMechanism = iota
-	Negotiate        AuthenticationMechanism = iota
-	UnknownMechanism AuthenticationMechanism = iota
+	NoAuth           AuthenticationMechanism = "NoAuth"
+	Mock             AuthenticationMechanism = "Mock"
+	Negotiate        AuthenticationMechanism = "Negotiate"
+	UnknownMechanism AuthenticationMechanism = "UnknownMechanism"
 )
 
 const (
@@ -40,6 +40,7 @@ type AuthenticationHandler struct {
 
 func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToken string) (string, error) {
 	authorizeValue := ""
+	mechanism := string(a.Mechanism)
 
 	if a.Mechanism == Negotiate { // supporting mechanism: Negotiate (SPNEGO)
 		// todo: check if the security context is done!
@@ -55,11 +56,11 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 				a.State = Error
 				return "", err
 			}
-			authorizeValue = t
+			authorizeValue = mechanism + " " + t
 		}
 	} else if a.Mechanism == Mock { // supporting mechanism: Mock for testing
 		// tmpRequest.Header.Set(AuthorizationKey, "Mock "+responseToken)
-		authorizeValue = "Mock " + responseToken
+		authorizeValue = mechanism + " " + responseToken
 		a.State = Done
 	}
 
