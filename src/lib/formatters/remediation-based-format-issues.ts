@@ -493,8 +493,8 @@ export function formatIssue(
         severity,
       )} Severity${originalSeverityStr}]`,
     ) +
-    '\n    ' +
     reachabilityText +
+    '\n    ' +
     `[${config.ROOT}/vuln/${id}]` +
     name +
     reachableVia +
