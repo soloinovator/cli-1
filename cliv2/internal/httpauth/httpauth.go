@@ -57,7 +57,6 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 	mechanism := string(a.Mechanism)
 
 	if a.Mechanism == Negotiate { // supporting mechanism: Negotiate (SPNEGO)
-		// todo: check if the security context is done!
 
 		if a.State == Initial {
 			// initial => no authorization is done
@@ -80,7 +79,6 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 			authorizeValue = mechanism + " " + token
 		}
 	} else if a.Mechanism == Mock { // supporting mechanism: Mock for testing
-		// tmpRequest.Header.Set(AuthorizationKey, "Mock "+responseToken)
 		authorizeValue = mechanism + " " + responseToken
 		a.State = Done
 	}

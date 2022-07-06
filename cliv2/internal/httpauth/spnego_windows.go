@@ -21,7 +21,6 @@ func SpenegoProviderInstance() SpnegoProvider {
 func (s *WindowsSpenegoProvider) init(url *url.URL) ([]byte, error) {
 	hostname := url.Hostname()
 	token := []byte{}
-	// TODO: consider if we want to canonicalize the hostname
 
 	spn := "HTTP/" + hostname
 
