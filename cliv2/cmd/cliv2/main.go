@@ -24,6 +24,10 @@ func getDebugLogger(args []string) *log.Logger {
 	debug := utils.Contains(args, "--debug")
 
 	if !debug {
+		debug = utils.Contains(args, "-d")
+	}
+
+	if !debug {
 		debugLogger.SetOutput(ioutil.Discard)
 	}
 
