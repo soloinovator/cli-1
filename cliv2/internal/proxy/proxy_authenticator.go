@@ -3,7 +3,6 @@ package proxy
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -36,8 +35,8 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 		if proxyURL != nil {
 			authHandler := &httpauth.AuthenticationHandler{
 				SpnegoProvider: httpauth.SpenegoProviderInstance(), // TODO: don't for get to call .Close() on this
-				Mechanism: p.acceptedProxyAuthMechanism,
-				State:     httpauth.Initial,
+				Mechanism:      p.acceptedProxyAuthMechanism,
+				State:          httpauth.Initial,
 			}
 
 			p.debugLogger.Println("Proxy Address:", proxyURL)
@@ -50,69 +49,64 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 				var responseError error
 
 				if token, err = authHandler.GetAuthorizationValue(proxyURL, responseToken); err == nil {
-					p.debugLogger.Printf("token received from httpauth: %s\n", token)
 
 					if len(token) > 0 {
 						proxyConnectHeader.Add(httpauth.ProxyAuthorizationKey, token)
-						p.debugLogger.Printf("CONNECT Header added %s: %s\n", httpauth.ProxyAuthorizationKey, token)
+						p.debugLogger.Printf("> %s: %s\n", httpauth.ProxyAuthorizationKey, token)
 					} else {
 						p.debugLogger.Printf("CONNECT Header NOT added \"%s\" (empty)\n", httpauth.ProxyAuthorizationKey)
 					}
 
-					//
-					isStopped := authHandler.IsStopped()
-					fmt.Println("isStopped: ", isStopped)
-					if !authHandler.IsStopped() {
-						// send connect
-						p.debugLogger.Println("Sending CONNECT request to proxy")
-						response, responseError = p.Send(ctx, connection, &http.Request{
-							Method: "CONNECT",
-							URL:    &url.URL{Opaque: target},
-							Host:   target,
-							Header: proxyConnectHeader,
-						})
+					// send connect
+					response, responseError = p.Send(ctx, connection, &http.Request{
+						Method: "CONNECT",
+						URL:    &url.URL{Opaque: target},
+						Host:   target,
+						Header: proxyConnectHeader,
+					})
 
-						fmt.Println("response.StatusCode: ", response.StatusCode)
-						fmt.Println("response.headers:")
-						headers_bytes, _ := json.MarshalIndent(response.Header, "", "  ")
-						if err != nil {
-							fmt.Println("error:", err)
-						}
-						fmt.Print(string(headers_bytes))
-						
-						if response != nil && response.StatusCode == 407 {
-							detectedMechanism := httpauth.NoAuth
+					if response != nil && response.StatusCode == 407 {
+						detectedMechanism := httpauth.NoAuth
 
-							result := response.Header.Values(httpauth.ProxyAuthenticateKey)
-							if len(result) == 1 {
-								authenticateValue := strings.Split(result[0], " ")
-								p.debugLogger.Printf("Proxy-Authenticate: %s\n", authenticateValue)
+						result := response.Header.Values(httpauth.ProxyAuthenticateKey)
+						if len(result) == 1 {
+							authenticateValue := strings.Split(result[0], " ")
+							p.debugLogger.Printf("< %s: %s\n", httpauth.ProxyAuthenticateKey, result[0])
 
-								if len(authenticateValue) >= 1 {
-									detectedMechanism = httpauth.AuthenticationMechanismFromString(authenticateValue[0])
-									p.debugLogger.Printf("Detected Mechanism: %d (%s)\n", detectedMechanism, authenticateValue[0])
-								}
-
-								if len(authenticateValue) == 2 {
-									responseToken = authenticateValue[1]
-								} else {
-									responseToken = ""
-								}
-
-								p.debugLogger.Printf("Response Token: %s\n", responseToken)
+							if len(authenticateValue) >= 1 {
+								detectedMechanism = httpauth.AuthenticationMechanismFromString(authenticateValue[0])
+								p.debugLogger.Printf("  Detected Mechanism: %s (%s)\n", detectedMechanism, authenticateValue[0])
 							}
 
-							if detectedMechanism != p.acceptedProxyAuthMechanism {
-								authHandler.Cancel()
-								err = fmt.Errorf("Incorrect Mechanism detected! %s", result)
+							if len(authenticateValue) == 2 {
+								responseToken = authenticateValue[1]
+								p.debugLogger.Printf("  Response Token: %s\n", responseToken)
+							} else {
+								responseToken = ""
 							}
-						} else if response != nil && response.StatusCode == 200 {
-							authHandler.Succesful()
+
+						} else {
+							authHandler.Cancel()
+							err = fmt.Errorf("Received 407 but didn't find \"%s\" in the header!", httpauth.ProxyAuthenticateKey)
 						}
+
+						if detectedMechanism != p.acceptedProxyAuthMechanism {
+							authHandler.Cancel()
+							err = fmt.Errorf("Incorrect Mechanism detected! %s", result)
+						}
+					} else if response != nil && response.StatusCode == 200 {
+						authHandler.Succesful()
+					} else if response != nil {
+						authHandler.Cancel()
+						err = fmt.Errorf("Unexpected HTTP Status Code %d", response.StatusCode)
 					} else if responseError != nil {
 						authHandler.Cancel()
 						err = fmt.Errorf("Failed to CONNECT to proxy! %v", responseError)
+					} else {
+						authHandler.Cancel()
+						err = fmt.Errorf("Failed to CONNECT to proxy due to unknown error!")
 					}
+
 				} else {
 					authHandler.Cancel()
 					err = fmt.Errorf("Failed to retreive Proxy Authorization! %v", err)
@@ -209,9 +203,6 @@ func (p *ProxyAuthenticator) Send(ctx context.Context, connection net.Conn, requ
 		// TLS server will not speak until spoken to.
 		br := bufio.NewReader(connection)
 		resp, err = http.ReadResponse(br, request)
-		if err != nil {
-			return
-		}
 	}()
 	select {
 	case <-connectCtx.Done():
@@ -222,12 +213,11 @@ func (p *ProxyAuthenticator) Send(ctx context.Context, connection net.Conn, requ
 		// resp or err now set
 	}
 
-	//fmt.Println("Send() ------------------------------------------------------------------------------------------------------------------------")
-	//fmt.Println("Send() - Request: ", request)
-	//fmt.Println("Send() - Response: ", resp)
-	//fmt.Println("Send() ------------------------------------------------------------------------------------------------------------------------")
+	if resp != nil {
+		resp.Body.Close()
+	}
 
-	return resp, nil
+	return resp, err
 }
 
 var portMap = map[string]string{

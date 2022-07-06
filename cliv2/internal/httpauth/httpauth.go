@@ -1,14 +1,13 @@
 package httpauth
 
 import (
-	"fmt"
 	"net/url"
 )
 
 type AuthenticationMechanism string
 type AuthenticationState int
 
-const maxCycleCount int = 3
+const maxCycleCount int = 10
 
 const (
 	NoAuth           AuthenticationMechanism = "NoAuth"
@@ -46,17 +45,24 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 		// todo: check if the security context is done!
 
 		if a.State == Initial {
-			fmt.Println("a.State: Initial")
+			// initial => no authorization is done
 			a.State = Negotiating
-
 		} else if a.State == Negotiating {
-			fmt.Println("a.State: Negotiating")
-			t, err := a.SpnegoProvider.GetSPNEGOToken(url)
+			var err error
+			var token string
+			var done bool
+
+			token, done, err = a.SpnegoProvider.GetSPNEGOToken(url, responseToken)
 			if err != nil {
 				a.State = Error
 				return "", err
 			}
-			authorizeValue = mechanism + " " + t
+
+			if done {
+				a.State = Done
+			}
+
+			authorizeValue = mechanism + " " + token
 		}
 	} else if a.Mechanism == Mock { // supporting mechanism: Mock for testing
 		// tmpRequest.Header.Set(AuthorizationKey, "Mock "+responseToken)
@@ -65,7 +71,6 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 	}
 
 	a.cycleCount++
-	fmt.Println("a.cycleCount:", a.cycleCount)
 
 	return authorizeValue, nil
 }
@@ -88,18 +93,7 @@ func (a *AuthenticationHandler) Succesful() {
 }
 
 func StringFromAuthenticationMechanism(mechanism AuthenticationMechanism) string {
-	var result string
-	switch mechanism {
-	case NoAuth:
-		result = "NoAuth"
-	case Negotiate:
-		result = "Negotiate"
-	case Mock:
-		result = "Mock"
-	default:
-		result = "Unknonwn AuthenticationMechanism"
-	}
-	return result
+	return string(mechanism)
 }
 
 func AuthenticationMechanismFromString(mechanism string) AuthenticationMechanism {

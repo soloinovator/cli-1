@@ -4,7 +4,6 @@
 package httpauth
 
 import (
-	"fmt"
 	"net/url"
 )
 
@@ -16,15 +15,11 @@ func NewNonwindowsSpenegoProvider() *NonwindowsSpenegoProvider {
 }
 
 func SpenegoProviderInstance() SpnegoProvider {
-	return  &NonwindowsSpenegoProvider{}
+	return &NonwindowsSpenegoProvider{}
 }
 
-func (s *NonwindowsSpenegoProvider) GetSPNEGOToken(url *url.URL) (string, error) {
-	return "TODO", nil
-}
-
-func (s *NonwindowsSpenegoProvider) UpdateSPNEGOToken(url *url.URL, responseToken string) (string, error) {
-	return "", fmt.Errorf("UpdateSPNEGOToken is not implemented for non-windows")
+func (s *NonwindowsSpenegoProvider) GetSPNEGOToken(url *url.URL, responseToken string) (string, bool, error) {
+	return "TODO", false, nil
 }
 
 func (s *NonwindowsSpenegoProvider) Close() error {
