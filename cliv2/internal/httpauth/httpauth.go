@@ -1,16 +1,14 @@
 package httpauth
 
 import (
-	"net/http"
+	"fmt"
 	"net/url"
-
-	"github.com/dpotapov/go-spnego"
 )
 
 type AuthenticationMechanism int
 type AuthenticationState int
 
-const maxCycleCount int = 10
+const maxCycleCount int = 3
 
 const (
 	NoAuth           AuthenticationMechanism = iota
@@ -34,48 +32,39 @@ const (
 )
 
 type AuthenticationHandler struct {
-	Mechanism  AuthenticationMechanism
-	State      AuthenticationState
-	cycleCount int
+	SpnegoProvider SpnegoProvider
+	Mechanism      AuthenticationMechanism
+	State          AuthenticationState
+	cycleCount     int
 }
 
 func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToken string) (string, error) {
-
-	var authorizeValue string
-
-	tmpRequest := http.Request{
-		URL:    url,
-		Header: map[string][]string{},
-	}
+	authorizeValue := ""
 
 	if a.Mechanism == Negotiate { // supporting mechanism: Negotiate (SPNEGO)
+		// todo: check if the security context is done!
 
-		if Negotiating == a.State {
-			var provider spnego.Provider = spnego.New()
-			cannonicalize := false
+		if a.State == Initial {
+			fmt.Println("a.State: Initial")
+			a.State = Negotiating
 
-			// todo: forward response token to provider
-			if err := provider.SetSPNEGOHeader(&tmpRequest, cannonicalize); err != nil {
+		} else if a.State == Negotiating {
+			fmt.Println("a.State: Negotiating")
+			t, err := a.SpnegoProvider.GetSPNEGOToken(url)
+			if err != nil {
 				a.State = Error
 				return "", err
 			}
-
-			// todo: check if the security context is done!
-		} else if Initial == a.State {
-			a.State = Negotiating
+			authorizeValue = t
 		}
-
 	} else if a.Mechanism == Mock { // supporting mechanism: Mock for testing
-		tmpRequest.Header.Set(AuthorizationKey, "Mock "+responseToken)
+		// tmpRequest.Header.Set(AuthorizationKey, "Mock "+responseToken)
+		authorizeValue = "Mock " + responseToken
 		a.State = Done
 	}
 
-	// ugly work around the fact that go-spnego only adds an "Authorize" Header and not "Proxy-Authorize"
-	if a.Mechanism != NoAuth {
-		authorizeValue = tmpRequest.Header.Get(AuthorizationKey)
-	}
-
 	a.cycleCount++
+	fmt.Println("a.cycleCount:", a.cycleCount)
 
 	return authorizeValue, nil
 }

@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -34,6 +35,7 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 	if p.acceptedProxyAuthMechanism != httpauth.NoAuth {
 		if proxyURL != nil {
 			authHandler := &httpauth.AuthenticationHandler{
+				SpnegoProvider: httpauth.SpenegoProviderInstance(), // TODO: don't for get to call .Close() on this
 				Mechanism: p.acceptedProxyAuthMechanism,
 				State:     httpauth.Initial,
 			}
@@ -48,6 +50,7 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 				var responseError error
 
 				if token, err = authHandler.GetAuthorizationValue(proxyURL, responseToken); err == nil {
+					p.debugLogger.Printf("token received from httpauth: %s\n", token)
 
 					if len(token) > 0 {
 						proxyConnectHeader.Add(httpauth.ProxyAuthorizationKey, token)
@@ -57,8 +60,11 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 					}
 
 					//
+					isStopped := authHandler.IsStopped()
+					fmt.Println("isStopped: ", isStopped)
 					if !authHandler.IsStopped() {
 						// send connect
+						p.debugLogger.Println("Sending CONNECT request to proxy")
 						response, responseError = p.Send(ctx, connection, &http.Request{
 							Method: "CONNECT",
 							URL:    &url.URL{Opaque: target},
@@ -66,6 +72,14 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 							Header: proxyConnectHeader,
 						})
 
+						fmt.Println("response.StatusCode: ", response.StatusCode)
+						fmt.Println("response.headers:")
+						headers_bytes, _ := json.MarshalIndent(response.Header, "", "  ")
+						if err != nil {
+							fmt.Println("error:", err)
+						}
+						fmt.Print(string(headers_bytes))
+						
 						if response != nil && response.StatusCode == 407 {
 							detectedMechanism := httpauth.NoAuth
 
