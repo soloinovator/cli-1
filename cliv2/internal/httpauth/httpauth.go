@@ -1,6 +1,7 @@
 package httpauth
 
 import (
+	"log"
 	"net/url"
 )
 
@@ -36,11 +37,12 @@ type AuthenticationHandler struct {
 	Mechanism      AuthenticationMechanism
 	state          AuthenticationState
 	cycleCount     int
+	logger         *log.Logger
 }
 
 func NewHandler(mechanism AuthenticationMechanism) *AuthenticationHandler {
 	a := &AuthenticationHandler{
-		spnegoProvider: SpnegoProviderInstance(), // TODO: don't for get to call .Close() on this
+		spnegoProvider: SpnegoProviderInstance(),
 		Mechanism:      mechanism,
 		state:          Initial,
 	}
@@ -99,6 +101,11 @@ func (a *AuthenticationHandler) Cancel() {
 
 func (a *AuthenticationHandler) Succesful() {
 	a.state = Done
+}
+
+func (a *AuthenticationHandler) SetLogger(logger *log.Logger) {
+	a.logger = logger
+	a.spnegoProvider.SetLogger(logger)
 }
 
 func StringFromAuthenticationMechanism(mechanism AuthenticationMechanism) string {

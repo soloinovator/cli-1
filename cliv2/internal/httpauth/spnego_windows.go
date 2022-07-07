@@ -10,10 +10,6 @@ type WindowsSpnegoProvider struct {
 	clientContext *negotiate.ClientContext
 }
 
-func NewWindowsSpnegoProvider() *WindowsSpnegoProvider {
-	return &WindowsSpnegoProvider{}
-}
-
 func SpnegoProviderInstance() SpnegoProvider {
 	return &WindowsSpnegoProvider{}
 }
@@ -72,4 +68,8 @@ func (s *WindowsSpnegoProvider) GetToken(url *url.URL, responseToken string) (st
 
 func (s *WindowsSpnegoProvider) Close() error {
 	return s.clientContext.Release()
+}
+
+func (s *WindowsSpnegoProvider) SetLogger(logger *log.Logger) {
+	//this implementation currently doesn't require a logger
 }

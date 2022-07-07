@@ -34,6 +34,7 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 	if p.acceptedProxyAuthMechanism != httpauth.NoAuth {
 		if proxyURL != nil {
 			authHandler := httpauth.NewHandler(p.acceptedProxyAuthMechanism)
+			authHandler.SetLogger(p.debugLogger)
 			defer authHandler.Close()
 
 			p.debugLogger.Println("Proxy Address:", proxyURL)
