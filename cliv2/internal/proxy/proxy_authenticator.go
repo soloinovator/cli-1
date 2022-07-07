@@ -37,7 +37,7 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 			defer authHandler.Close()
 
 			p.debugLogger.Println("Proxy Address:", proxyURL)
-			p.debugLogger.Printf("Connection to %s from %s via %s\n", target, connection.LocalAddr(), connection.RemoteAddr())
+			p.debugLogger.Printf("CONNECT to %s from %s via %s\n", target, connection.LocalAddr(), connection.RemoteAddr())
 
 			for !authHandler.IsStopped() {
 
@@ -70,7 +70,7 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 
 							if len(authenticateValue) >= 1 {
 								detectedMechanism = httpauth.AuthenticationMechanismFromString(authenticateValue[0])
-								p.debugLogger.Printf("  Detected Mechanism: %s (%s)\n", detectedMechanism, authenticateValue[0])
+								p.debugLogger.Printf("  Detected Mechanism: %s\n", detectedMechanism)
 							}
 
 							if len(authenticateValue) == 2 {
@@ -130,7 +130,7 @@ func (p *ProxyAuthenticator) GetDialContext(ctx context.Context, network, addr s
 
 	proxyAddr := canonicalAddr(proxyUrl)
 
-	p.debugLogger.Printf("Dial context: CONNECT %s via %s\n", addr, proxyAddr)
+	//p.debugLogger.Printf("Creating %s connection to %s\n", strings.ToUpper(network), proxyAddr)
 
 	connection, err = net.Dial(network, proxyAddr)
 	if err == nil {
