@@ -32,6 +32,15 @@ const (
 	ProxyAuthenticateKey  string = "Proxy-Authenticate"
 )
 
+type AuthenticationHandlerInterface interface {
+	Close()
+	Cancel()
+	Succesful()
+	IsStopped() bool
+	GetAuthorizationValue(url *url.URL, responseToken string) (string, error)
+	SetLogger(logger *log.Logger)
+}
+
 type AuthenticationHandler struct {
 	spnegoProvider SpnegoProvider
 	Mechanism      AuthenticationMechanism
@@ -40,7 +49,7 @@ type AuthenticationHandler struct {
 	logger         *log.Logger
 }
 
-func NewHandler(mechanism AuthenticationMechanism) *AuthenticationHandler {
+func NewHandler(mechanism AuthenticationMechanism) AuthenticationHandlerInterface {
 	a := &AuthenticationHandler{
 		spnegoProvider: SpnegoProviderInstance(),
 		Mechanism:      mechanism,
@@ -72,13 +81,13 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 		}
 
 		if done {
-			a.state = Done
+			a.Succesful()
 		}
 
 		authorizeValue = mechanism + " " + token
 	} else if a.Mechanism == Mock { // supporting mechanism: Mock for testing
 		authorizeValue = mechanism + " " + responseToken
-		a.state = Done
+		a.Succesful()
 	}
 
 	a.cycleCount++
