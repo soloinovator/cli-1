@@ -6,19 +6,19 @@ import (
 	"net/url"
 )
 
-type WindowsSpenegoProvider struct {
+type WindowsSpnegoProvider struct {
 	clientContext *negotiate.ClientContext
 }
 
-func NewWindowsSpenegoProvider() *WindowsSpenegoProvider {
-	return &WindowsSpenegoProvider{}
+func NewWindowsSpnegoProvider() *WindowsSpnegoProvider {
+	return &WindowsSpnegoProvider{}
 }
 
-func SpenegoProviderInstance() SpnegoProvider {
-	return &WindowsSpenegoProvider{}
+func SpnegoProviderInstance() SpnegoProvider {
+	return &WindowsSpnegoProvider{}
 }
 
-func (s *WindowsSpenegoProvider) init(url *url.URL) ([]byte, error) {
+func (s *WindowsSpnegoProvider) init(url *url.URL) ([]byte, error) {
 	hostname := url.Hostname()
 	token := []byte{}
 
@@ -39,7 +39,7 @@ func (s *WindowsSpenegoProvider) init(url *url.URL) ([]byte, error) {
 	return token, nil
 }
 
-func (s *WindowsSpenegoProvider) update(responseToken string) ([]byte, bool, error) {
+func (s *WindowsSpnegoProvider) update(responseToken string) ([]byte, bool, error) {
 	var decodedToken []byte
 	var newRequesToken []byte
 	var err error
@@ -55,7 +55,7 @@ func (s *WindowsSpenegoProvider) update(responseToken string) ([]byte, bool, err
 	return newRequesToken, done, err
 }
 
-func (s *WindowsSpenegoProvider) GetSPNEGOToken(url *url.URL, responseToken string) (string, bool, error) {
+func (s *WindowsSpnegoProvider) GetToken(url *url.URL, responseToken string) (string, bool, error) {
 	var err error
 	var token []byte
 	done := false
@@ -70,6 +70,6 @@ func (s *WindowsSpenegoProvider) GetSPNEGOToken(url *url.URL, responseToken stri
 	return encodedToken, done, err
 }
 
-func (s *WindowsSpenegoProvider) Close() error {
+func (s *WindowsSpnegoProvider) Close() error {
 	return s.clientContext.Release()
 }

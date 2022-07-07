@@ -40,7 +40,7 @@ type AuthenticationHandler struct {
 
 func NewHandler(mechanism AuthenticationMechanism) *AuthenticationHandler {
 	a := &AuthenticationHandler{
-		spnegoProvider: SpenegoProviderInstance(), // TODO: don't for get to call .Close() on this
+		spnegoProvider: SpnegoProviderInstance(), // TODO: don't for get to call .Close() on this
 		Mechanism:      mechanism,
 		state:          Initial,
 	}
@@ -63,7 +63,7 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 
 		a.state = Negotiating
 
-		token, done, err = a.spnegoProvider.GetSPNEGOToken(url, responseToken)
+		token, done, err = a.spnegoProvider.GetToken(url, responseToken)
 		if err != nil {
 			a.state = Error
 			return "", err

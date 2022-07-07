@@ -5,6 +5,6 @@ import (
 )
 
 type SpnegoProvider interface {
-	GetSPNEGOToken(url *url.URL, responseToken string) (string, bool, error)
+	GetToken(url *url.URL, responseToken string) (string, bool, error)
 	Close() error
 }

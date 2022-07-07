@@ -7,21 +7,21 @@ import (
 	"net/url"
 )
 
-type NonwindowsSpenegoProvider struct {
+type NonwindowsSpnegoProvider struct {
 }
 
-func NewNonwindowsSpenegoProvider() *NonwindowsSpenegoProvider {
-	return &NonwindowsSpenegoProvider{}
+func NewNonwindowsSpnegoProvider() *NonwindowsSpnegoProvider {
+	return &NonwindowsSpnegoProvider{}
 }
 
-func SpenegoProviderInstance() SpnegoProvider {
-	return &NonwindowsSpenegoProvider{}
+func SpnegoProviderInstance() SpnegoProvider {
+	return &NonwindowsSpnegoProvider{}
 }
 
-func (s *NonwindowsSpenegoProvider) GetSPNEGOToken(url *url.URL, responseToken string) (string, bool, error) {
+func (s *NonwindowsSpnegoProvider) GetToken(url *url.URL, responseToken string) (string, bool, error) {
 	return "TODO", false, nil
 }
 
-func (s *NonwindowsSpenegoProvider) Close() error {
+func (s *NonwindowsSpnegoProvider) Close() error {
 	return nil
 }
