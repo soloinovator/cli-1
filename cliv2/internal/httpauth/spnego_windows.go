@@ -3,6 +3,7 @@ package httpauth
 import (
 	"encoding/base64"
 	"github.com/alexbrainman/sspi/negotiate"
+	"log"
 	"net/url"
 )
 
