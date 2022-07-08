@@ -67,9 +67,9 @@ func (a *AuthenticationHandler) Close() {
 func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToken string) (string, error) {
 	authorizeValue := ""
 	mechanism := string(a.Mechanism)
+	var err error
 
 	if a.Mechanism == Negotiate { // supporting mechanism: Negotiate (SPNEGO)
-		var err error
 		var token string
 		var done bool
 
@@ -97,12 +97,15 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 	}
 
 	a.cycleCount++
+	if a.cycleCount >= maxCycleCount {
+		err = fmt.Errorf("Failed to authenticate with %d cycles, stopping now!", maxCycleCount)
+	}
 
-	return authorizeValue, nil
+	return authorizeValue, err
 }
 
 func (a *AuthenticationHandler) IsStopped() bool {
-	return (a.state == Done || a.state == Error || a.state == Cancel || a.state == Close || a.cycleCount >= maxCycleCount)
+	return (a.state == Done || a.state == Error || a.state == Cancel || a.state == Close)
 }
 
 func (a *AuthenticationHandler) Reset() {
