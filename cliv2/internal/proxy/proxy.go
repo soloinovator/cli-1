@@ -24,7 +24,7 @@ type WrapperProxy struct {
 	CertificateLocation string
 	upstreamProxy       func(*http.Request) (*url.URL, error)
 	transport           *http.Transport
-	authenticator       *ProxyAuthenticator
+	authenticator       *httpauth.ProxyAuthenticator
 }
 
 func NewWrapperProxy(insecureSkipVerify bool, cacheDirectory string, cliVersion string, debugLogger *log.Logger) (*WrapperProxy, error) {
@@ -156,11 +156,7 @@ func (p *WrapperProxy) SetUpstreamProxyAuthentication(mechanism httpauth.Authent
 	p.DebugLogger.Println("Proxy Authentication Mechanism:", httpauth.StringFromAuthenticationMechanism(mechanism))
 
 	if httpauth.Negotiate == mechanism { // since Negotiate is not covered by the go http stack, we skip its proxy handling and inject a custom Handling via the DialContext
-		p.authenticator = &ProxyAuthenticator{
-			acceptedProxyAuthMechanism: mechanism,
-			debugLogger:                p.DebugLogger,
-			upstreamProxy:              p.upstreamProxy,
-		}
+		p.authenticator = httpauth.NewProxyAuthenticator(mechanism, p.upstreamProxy, p.DebugLogger)
 		p.transport.DialContext = p.authenticator.GetDialContext
 		p.transport.Proxy = nil
 	} else { // for other mechanisms like basic we switch back to go default behavior
@@ -186,7 +182,7 @@ func (p *WrapperProxy) SetUpStreamProxy(poxyFunc func(req *http.Request) (*url.U
 	p.upstreamProxy = poxyFunc
 
 	if p.authenticator != nil {
-		p.SetUpstreamProxyAuthentication(p.authenticator.acceptedProxyAuthMechanism)
+		p.SetUpstreamProxyAuthentication(p.authenticator.GetMechanism())
 	}
 }
 

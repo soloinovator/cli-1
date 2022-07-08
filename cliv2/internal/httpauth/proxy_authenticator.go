@@ -1,4 +1,4 @@
-package proxy
+package httpauth
 
 import (
 	"bufio"
@@ -11,14 +11,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/snyk/cli/cliv2/internal/httpauth"
 	"golang.org/x/net/idna"
 )
 
 type ProxyAuthenticator struct {
-	acceptedProxyAuthMechanism httpauth.AuthenticationMechanism
+	acceptedProxyAuthMechanism AuthenticationMechanism
 	debugLogger                *log.Logger
 	upstreamProxy              func(*http.Request) (*url.URL, error)
+}
+
+func NewProxyAuthenticator(mechanism AuthenticationMechanism, upstreamProxy func(*http.Request) (*url.URL, error), logger *log.Logger) *ProxyAuthenticator {
+	authenticator := &ProxyAuthenticator{
+		acceptedProxyAuthMechanism: mechanism,
+		debugLogger:                logger,
+		upstreamProxy:              upstreamProxy,
+	}
+	return authenticator
 }
 
 // This is the main entry point function for the ProxyAuthenticator when being used with http.Transport.
@@ -42,6 +50,12 @@ func (p *ProxyAuthenticator) GetDialContext(ctx context.Context, network, addr s
 		if err == nil {
 			err = p.ConnectToProxy(ctx, proxyUrl, addr, connection)
 		}
+
+		if err != nil {
+			fmt.Println("Failed to connect to Proxy!")
+			connection.Close()
+			connection = nil
+		}
 	} else {
 		p.debugLogger.Println("No HTTPS Proxy defined!")
 		connection, err = net.Dial(network, addr)
@@ -64,8 +78,8 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 		return fmt.Errorf("Given target address must not be empty!")
 	}
 
-	if p.acceptedProxyAuthMechanism != httpauth.NoAuth {
-		authHandler := httpauth.NewHandler(p.acceptedProxyAuthMechanism)
+	if p.acceptedProxyAuthMechanism != NoAuth {
+		authHandler := NewHandler(p.acceptedProxyAuthMechanism)
 		authHandler.SetLogger(p.debugLogger)
 		defer authHandler.Close()
 
@@ -79,8 +93,8 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 
 			if token, err = authHandler.GetAuthorizationValue(proxyURL, responseToken); err == nil {
 				if len(token) > 0 {
-					proxyConnectHeader.Add(httpauth.ProxyAuthorizationKey, token)
-					p.debugLogger.Printf("> %s: %s\n", httpauth.ProxyAuthorizationKey, token)
+					proxyConnectHeader.Add(ProxyAuthorizationKey, token)
+					p.debugLogger.Printf("> %s: %s\n", ProxyAuthorizationKey, token)
 				}
 
 				request := &http.Request{
@@ -103,10 +117,10 @@ func (p *ProxyAuthenticator) ConnectToProxy(ctx context.Context, proxyURL *url.U
 	return err
 }
 
-func (p *ProxyAuthenticator) ProcessResponse(authHandler httpauth.AuthenticationHandlerInterface, response *http.Response, responseError error) (responseToken string, err error) {
+func (p *ProxyAuthenticator) ProcessResponse(authHandler AuthenticationHandlerInterface, response *http.Response, responseError error) (responseToken string, err error) {
 	if response != nil && response.StatusCode == 407 {
 		responseToken, err = p.ProcessResponse407(authHandler, response, responseError)
-	} else if response != nil && response.StatusCode == 200 {
+	} else if response != nil && response.StatusCode <= 200 && response.StatusCode <= 299 {
 		authHandler.Succesful()
 	} else if response != nil {
 		authHandler.Cancel()
@@ -121,16 +135,16 @@ func (p *ProxyAuthenticator) ProcessResponse(authHandler httpauth.Authentication
 	return responseToken, err
 }
 
-func (p *ProxyAuthenticator) ProcessResponse407(authHandler httpauth.AuthenticationHandlerInterface, response *http.Response, responseError error) (responseToken string, err error) {
-	detectedMechanism := httpauth.NoAuth
+func (p *ProxyAuthenticator) ProcessResponse407(authHandler AuthenticationHandlerInterface, response *http.Response, responseError error) (responseToken string, err error) {
+	detectedMechanism := NoAuth
 
-	result := response.Header.Values(httpauth.ProxyAuthenticateKey)
+	result := response.Header.Values(ProxyAuthenticateKey)
 	if len(result) == 1 {
 		authenticateValue := strings.Split(result[0], " ")
-		p.debugLogger.Printf("< %s: %s\n", httpauth.ProxyAuthenticateKey, result[0])
+		p.debugLogger.Printf("< %s: %s\n", ProxyAuthenticateKey, result[0])
 
 		if len(authenticateValue) >= 1 {
-			detectedMechanism = httpauth.AuthenticationMechanismFromString(authenticateValue[0])
+			detectedMechanism = AuthenticationMechanismFromString(authenticateValue[0])
 			p.debugLogger.Printf("  Detected Mechanism: %s\n", detectedMechanism)
 		}
 
@@ -143,7 +157,7 @@ func (p *ProxyAuthenticator) ProcessResponse407(authHandler httpauth.Authenticat
 
 	} else {
 		authHandler.Cancel()
-		err = fmt.Errorf("Received 407 but didn't find \"%s\" in the header!", httpauth.ProxyAuthenticateKey)
+		err = fmt.Errorf("Received 407 but didn't find \"%s\" in the header!", ProxyAuthenticateKey)
 	}
 
 	if detectedMechanism != p.acceptedProxyAuthMechanism {
@@ -151,6 +165,10 @@ func (p *ProxyAuthenticator) ProcessResponse407(authHandler httpauth.Authenticat
 		err = fmt.Errorf("Incorrect Mechanism detected! %s", result)
 	}
 	return responseToken, err
+}
+
+func (p *ProxyAuthenticator) GetMechanism() AuthenticationMechanism {
+	return p.acceptedProxyAuthMechanism
 }
 
 func LookupSchemeFromCannonicalAddress(addr string, defaultScheme string) string {
@@ -170,7 +188,7 @@ func LookupSchemeFromCannonicalAddress(addr string, defaultScheme string) string
 	return result
 }
 
-// the following code is partially taken from net/http/transport.go ----
+// the following code is partially taken and adapted from net/http/transport.go ----
 
 // Copyright 2011 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style

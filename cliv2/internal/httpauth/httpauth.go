@@ -1,6 +1,7 @@
 package httpauth
 
 import (
+	"fmt"
 	"log"
 	"net/url"
 )
@@ -72,6 +73,11 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 		var token string
 		var done bool
 
+		if len(responseToken) == 0 && Negotiating == a.state {
+			a.state = Error
+			return "", fmt.Errorf("Authentication failed! Unexpected empty token during negotiation!")
+		}
+
 		a.state = Negotiating
 
 		token, done, err = a.spnegoProvider.GetToken(url, responseToken)
@@ -81,7 +87,7 @@ func (a *AuthenticationHandler) GetAuthorizationValue(url *url.URL, responseToke
 		}
 
 		if done {
-			a.Succesful()
+			a.logger.Println("Security context done!")
 		}
 
 		authorizeValue = mechanism + " " + token
@@ -102,14 +108,17 @@ func (a *AuthenticationHandler) IsStopped() bool {
 func (a *AuthenticationHandler) Reset() {
 	a.state = Initial
 	a.cycleCount = 0
+	a.logger.Println("AuthenticationHandler.Reset()")
 }
 
 func (a *AuthenticationHandler) Cancel() {
 	a.state = Cancel
+	a.logger.Println("AuthenticationHandler.Cancel()")
 }
 
 func (a *AuthenticationHandler) Succesful() {
 	a.state = Done
+	a.logger.Println("AuthenticationHandler.Succesful()")
 }
 
 func (a *AuthenticationHandler) SetLogger(logger *log.Logger) {
