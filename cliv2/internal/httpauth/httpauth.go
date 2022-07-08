@@ -2,6 +2,7 @@ package httpauth
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 )
@@ -55,6 +56,7 @@ func NewHandler(mechanism AuthenticationMechanism) AuthenticationHandlerInterfac
 		spnegoProvider: SpnegoProviderInstance(),
 		Mechanism:      mechanism,
 		state:          Initial,
+		logger:         log.New(io.Discard, "", 0),
 	}
 	return a
 }

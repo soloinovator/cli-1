@@ -210,20 +210,3 @@ func Test_SetUpstreamProxy(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, expectedUrl, actualUrl)
 }
-
-func Test_LookupSchemeFromAddress(t *testing.T) {
-	defaultValue := "none"
-
-	input := map[string]string{
-		"snyk.io:443":     "https",
-		"snyk.io:80":      "http",
-		"snyk.io:1080":    "socks5",
-		"snyk.io":         defaultValue,
-		"snyk.io:443:das": defaultValue,
-	}
-
-	for addr, expected := range input {
-		actual := proxy.LookupSchemeFromCannonicalAddress(addr, defaultValue)
-		assert.Equal(t, expected, actual)
-	}
-}
