@@ -1,4 +1,4 @@
-import { IacFileScanResult, IacShareResultsFormat } from '../../types';
+import { IacFileScanResult, IacShareResultsFormat } from '../types';
 import * as path from 'path';
 
 export function formatShareResults(

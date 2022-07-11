@@ -6,7 +6,7 @@ import {
   IacOrgSettings,
   IaCTestFlags,
 } from '../types';
-import { processResults } from './v2';
+import { processResults } from './process-results';
 
 export interface ResultsProcessor {
   processResults(
