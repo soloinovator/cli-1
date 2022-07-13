@@ -26,6 +26,17 @@ describe('container test projects behavior with --app-vulns, --file and --exclud
     expect(applications[0].ok).toEqual(false);
     expect(code).toEqual(1);
   }, 10000);
+
+  it('should show app vulns tip when available', async () => {
+    const { stdout } = await runSnykCLI(
+      `container test docker-archive:test/fixtures/container-projects/os-packages-and-app-vulns.tar`,
+    );
+
+    expect(stdout).toContain(
+      'Snyk found some vulnerabilities in your image applications',
+    );
+  }, 10000);
+
   it('should find all vulns without experimental flag', async () => {
     const { code, stdout } = await runSnykCLI(
       `container test docker-archive:test/fixtures/container-projects/os-packages-and-app-vulns.tar --json`,

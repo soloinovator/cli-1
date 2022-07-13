@@ -195,10 +195,12 @@ export function getDisplayedOutput(
   const fixAdvice = fixTip ? `\n\n${fixTip}` : '';
 
   const dockerfileWarning = getDockerfileWarning(res.scanResult);
+  const appVulnsTip = getAppVulnsTipText(res, options);
   const dockerSuggestion = getDockerSuggestionText(
     options,
     config,
     res?.docker?.baseImage,
+    appVulnsTip,
   );
   const dockerDocsLink = getDockerRemediationDocsLink(dockerAdvice, config);
 
@@ -275,31 +277,34 @@ export function dockerUserCTA(options) {
   return '';
 }
 
-function getDockerSuggestionText(options, config, baseImageRes): string {
+function getDockerSuggestionText(
+  options,
+  config,
+  baseImageRes,
+  appVulnsTip,
+): string {
   if (!options.docker || options.isDockerUser) {
     return '';
   }
-
+  const optOutSuggestions =
+    '\n\nTo remove this message in the future, please run `snyk config set disableSuggestions=true`';
   let dockerSuggestion = '';
   if (config && config.disableSuggestions !== 'true') {
-    const optOutSuggestions =
-      '\n\nTo remove this message in the future, please run `snyk config set disableSuggestions=true`';
     if (!options.file) {
       if (!baseImageRes) {
-        dockerSuggestion +=
-          chalk.bold.white(
-            '\n\nSnyk wasn’t able to auto detect the base image, use `--file` option to get base image remediation advice.' +
-              `\nExample: $ snyk container test ${options.path} --file=path/to/Dockerfile`,
-          ) + optOutSuggestions;
+        dockerSuggestion += chalk.bold.white(
+          '\n\nSnyk wasn’t able to auto detect the base image, use `--file` option to get base image remediation advice.' +
+            `\nExample: $ snyk container test ${options.path} --file=path/to/Dockerfile`,
+        );
       }
     } else if (!options['exclude-base-image-vulns']) {
-      dockerSuggestion +=
-        chalk.bold.white(
-          '\n\nPro tip: use `--exclude-base-image-vulns` to exclude from display Docker base image vulnerabilities.',
-        ) + optOutSuggestions;
+      dockerSuggestion += chalk.bold.white(
+        '\n\nPro tip: use `--exclude-base-image-vulns` to exclude from display Docker base image vulnerabilities.',
+      );
     }
+    dockerSuggestion += chalk.bold.white(appVulnsTip);
   }
-  return dockerSuggestion;
+  return dockerSuggestion + optOutSuggestions;
 }
 function getDockerfileWarning(scanResult: ScanResult | undefined): string {
   if (!scanResult) {
@@ -406,4 +411,11 @@ function metadataForVuln(vuln): VulnMetaData {
     version: vuln.version,
     packageManager: vuln.packageManager,
   };
+}
+
+function getAppVulnsTipText(res, options: Options): string {
+  if (options.docker && res.targetFile && res.uniqueCount > 0) {
+    return '\n\nSnyk found some vulnerabilities in your image applications (Snyk searches for these vulnerabilities by default). See https://snyk.co/app-vulns for more information.';
+  }
+  return '';
 }
