@@ -1,42 +1,166 @@
 import { Options } from '../../../../../src/lib/types';
+import { v4 as uuidv4 } from 'uuid';
 import * as pollingTest from '../../../../../src/lib/polling/polling-test';
-import * as promise from '../../../../../src/lib/request/promise';
-import { depGraphData, scanResults } from './fixtures/';
+import * as featureFlags from '../../../../../src/lib/feature-flags/index';
+import * as common from '../../../../../src/lib/polling/common';
+import { scanResults } from './fixtures/';
 import { resolveAndTestFacts } from '../../../../../src/lib/ecosystems/resolve-test-facts';
-import * as pluginAnalytics from '../../../../../src/lib/ecosystems/plugin-analytics';
-import * as analytics from '../../../../../src/lib/analytics';
+import {
+  JsonApi,
+  Links,
+} from '../../../../../src/lib/ecosystems/unmanaged/types';
+import { issuesResponseData } from './fixtures/issues-response';
+import { expectedTestResult } from './fixtures/expected-test-result-new-impl';
+import { createDepgraphResponse } from './fixtures/create-dep-graph-response';
+import {
+  getDepGraphResponse,
+  getDepGraphResponseInProgress,
+} from './fixtures/get-dep-graph-response';
+import * as request from '../../../../../src/lib/request/promise';
 
 describe('resolve and test facts', () => {
-  afterEach(() => jest.restoreAllMocks());
+  beforeEach(() => {
+    const orgId = uuidv4();
 
-  const token =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjlkNGQyMzg0LWUwMmYtNGZiYS1hNWI1LTRhMjU4MzFlM2JmOCIsInNhcGlVcmwiOiJodHRwOi8vd3d3LmZha2Utc2FwaS11cmwvIiwic3RhcnRUaW1lIjoxNjI2MDk2MTg5NzQ1fQ.fyI15bzeB_HtMvqRIBQdKpKBZgQADwn3sByEk64DzxA';
-
-  const pollingTask = {
-    pollInterval: 30000,
-    maxAttempts: 25,
-  };
-
-  it('failing to resolve and test file-signatures fact for c/c++ projects', async () => {
-    const requestTestPollingTokenSpy = jest.spyOn(
-      pollingTest,
-      'requestTestPollingToken',
-    );
-    const pollingTestWithTokenUntilDoneSpy = jest.spyOn(
-      pollingTest,
-      'pollingTestWithTokenUntilDone',
-    );
-
-    requestTestPollingTokenSpy.mockResolvedValueOnce({
-      token,
-      status: 'ERROR',
-      pollingTask,
+    jest.spyOn(request, 'makeRequestRest').mockResolvedValue({
+      data: {
+        attributes: {
+          default_org_context: orgId,
+        },
+      },
     });
 
-    pollingTestWithTokenUntilDoneSpy.mockRejectedValueOnce({
-      code: 500,
-      message:
-        'Internal error (reference: eb9ab16c-1d33-4586-bf99-ef30c144d1f1)',
+    jest.spyOn(request, 'makeRequest').mockResolvedValue({
+      orgs: [{ id: orgId, slug: 'org1' }],
+    });
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('successfully resolving and testing file-signatures fact for c/c++ projects with unmanaged-deps service', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
+
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
+
+    jest.spyOn(pollingTest, 'createDepGraph').mockResolvedValueOnce({
+      data: createDepgraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getDepGraph').mockResolvedValue({
+      data: getDepGraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getIssues').mockResolvedValueOnce({
+      data: issuesResponseData,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    const [testResults, errors] = await resolveAndTestFacts(
+      'cpp',
+      scanResults,
+      {} as Options,
+    );
+
+    expect(testResults).toEqual(expectedTestResult);
+    expect(errors).toEqual([]);
+  });
+
+  it('successfully resolving and testing file-signatures fact for c/c++ projects with unmanaged-deps service when org slug is provided', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
+
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
+
+    jest.spyOn(pollingTest, 'createDepGraph').mockResolvedValueOnce({
+      data: createDepgraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getDepGraph').mockResolvedValue({
+      data: getDepGraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getIssues').mockResolvedValueOnce({
+      data: issuesResponseData,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    const [testResults, errors] = await resolveAndTestFacts(
+      'cpp',
+      scanResults,
+      { org: 'org1' } as Options,
+    );
+
+    expect(testResults).toEqual(expectedTestResult);
+    expect(errors).toEqual([]);
+  });
+
+  it('successfully resolving and testing file-signatures fact after a retry for c/c++ projects with unmanaged-deps service', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
+
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
+
+    jest.spyOn(pollingTest, 'createDepGraph').mockResolvedValueOnce({
+      data: createDepgraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getDepGraph').mockResolvedValue({
+      data: getDepGraphResponseInProgress,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getDepGraph').mockResolvedValue({
+      data: getDepGraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getIssues').mockResolvedValueOnce({
+      data: issuesResponseData,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    const [testResults, errors] = await resolveAndTestFacts(
+      'cpp',
+      scanResults,
+      {} as Options,
+    );
+
+    expect(testResults).toEqual(expectedTestResult);
+    expect(errors).toEqual([]);
+  });
+
+  it('failed resolving and testing file-signatures since createDepGraph throws exception with unmanaged-deps service', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
+
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
+
+    jest.spyOn(pollingTest, 'createDepGraph').mockImplementation(() => {
+      throw new Error('500');
     });
 
     const [testResults, errors] = await resolveAndTestFacts(
@@ -46,108 +170,68 @@ describe('resolve and test facts', () => {
     );
 
     expect(testResults).toEqual([]);
-    expect(errors[0]).toContain(
-      'Internal error (reference: eb9ab16c-1d33-4586-bf99-ef30c144d1f1)',
-    );
+    expect(errors).toEqual(['Could not test dependencies in path']);
   });
 
-  it.each`
-    actual         | expected
-    ${'CANCELLED'} | ${'Failed to process the project. Please run the command again with the `-d` flag and contact support@snyk.io with the contents of the output'}
-    ${'ERROR'}     | ${'Failed to process the project. Please run the command again with the `-d` flag and contact support@snyk.io with the contents of the output'}
-  `(
-    'should handle different file-signatures processing statuses for the testing flow',
-    async ({ actual, expected }) => {
-      const requestTestPollingTokenSpy = jest.spyOn(
-        pollingTest,
-        'requestTestPollingToken',
-      );
-      const makeRequestSpy = jest.spyOn(promise, 'makeRequest');
+  it('failed resolving and testing file-signatures since getDepGraph throws exception with unmanaged-deps service', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
 
-      requestTestPollingTokenSpy.mockResolvedValueOnce({
-        token,
-        status: 'OK',
-        pollingTask,
-      });
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
 
-      makeRequestSpy.mockResolvedValueOnce({
-        token,
-        status: actual,
-        pollingTask,
-      });
-
-      const [testResults, errors] = await resolveAndTestFacts(
-        'cpp',
-        scanResults,
-        {} as Options,
-      );
-
-      expect(testResults).toEqual([]);
-      expect(errors[0]).toContain(expected);
-    },
-  );
-
-  it('successfully resolving and testing file-signatures fact for c/c++ projects', async () => {
-    const resolveAndTestFactsSpy = jest.spyOn(
-      pollingTest,
-      'requestTestPollingToken',
-    );
-    const pollingTestWithTokenUntilDoneSpy = jest.spyOn(
-      pollingTest,
-      'pollingTestWithTokenUntilDone',
-    );
-
-    resolveAndTestFactsSpy.mockResolvedValueOnce({
-      token,
-      status: 'OK',
-      pollingTask,
+    jest.spyOn(pollingTest, 'createDepGraph').mockResolvedValueOnce({
+      data: createDepgraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
     });
 
-    pollingTestWithTokenUntilDoneSpy.mockResolvedValueOnce({
-      issuesData: {},
-      issues: [],
-      depGraphData,
-      fileSignaturesDetails: {},
-      vulnerabilities: [],
-      path: 'path',
-      dependencyCount: 1,
-      packageManager: 'Unmanaged (C/C++)',
+    jest.spyOn(pollingTest, 'getDepGraph').mockImplementation(() => {
+      throw new Error('500');
     });
 
-    const extractAndApplyPluginAnalyticsSpy = jest.spyOn(
-      pluginAnalytics,
-      'extractAndApplyPluginAnalytics',
-    );
-
-    const addAnalyticsSpy = jest.spyOn(analytics, 'add');
     const [testResults, errors] = await resolveAndTestFacts(
       'cpp',
       scanResults,
       {} as Options,
     );
 
-    expect(extractAndApplyPluginAnalyticsSpy).toHaveBeenCalledTimes(1);
-    expect(addAnalyticsSpy).toHaveBeenCalledWith('asyncRequestToken', token);
-    expect(addAnalyticsSpy).toHaveBeenCalledWith(
-      'fileSignaturesAnalyticsContext',
-      {
-        totalFileSignatures: 3,
-        totalSecondsElapsedToGenerateFileSignatures: 0,
-      },
+    expect(testResults).toEqual([]);
+    expect(errors).toEqual(['Could not test dependencies in path']);
+  });
+
+  it('failed resolving and testing file-signatures since getIssues throws exception with unmanaged-deps service', async () => {
+    const hasFeatureFlag: boolean | undefined = true;
+    jest
+      .spyOn(featureFlags, 'hasFeatureFlag')
+      .mockResolvedValueOnce(hasFeatureFlag);
+
+    jest.spyOn(common, 'delayNextStep').mockImplementation();
+
+    jest.spyOn(pollingTest, 'createDepGraph').mockResolvedValueOnce({
+      data: createDepgraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getDepGraph').mockResolvedValue({
+      data: getDepGraphResponse,
+      jsonapi: { version: 'v1.0' } as JsonApi,
+      links: { self: '' } as Links,
+    });
+
+    jest.spyOn(pollingTest, 'getIssues').mockImplementation(() => {
+      throw new Error('500');
+    });
+
+    const [testResults, errors] = await resolveAndTestFacts(
+      'cpp',
+      scanResults,
+      {} as Options,
     );
-    expect(addAnalyticsSpy).toHaveBeenCalledTimes(4);
-    expect(testResults).toEqual([
-      {
-        issuesData: {},
-        issues: [],
-        depGraphData,
-        fileSignaturesDetails: {},
-        vulnerabilities: [],
-        path: 'path',
-        dependencyCount: 1,
-        packageManager: 'Unmanaged (C/C++)',
-      },
-    ]);
-    expect(errors).toEqual([]);
+
+    expect(testResults).toEqual([]);
+    expect(errors).toEqual(['Could not test dependencies in path']);
   });
 });

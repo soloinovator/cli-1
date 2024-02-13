@@ -1,3 +1,4 @@
+import { EOL } from 'os';
 import { startMockServer, isValidJSONString } from './helpers';
 
 jest.setTimeout(50000);
@@ -20,13 +21,14 @@ describe('CloudFormation single file scan', () => {
     const { stdout, exitCode } = await run(
       `snyk iac test ./iac/cloudformation/aurora-valid.yml`,
     );
-    expect(stdout).toContain('Testing ./iac/cloudformation/aurora-valid.yml');
-    expect(stdout).toContain('Infrastructure as code issues:');
+    expect(stdout).toContain('File:    ./iac/cloudformation/aurora-valid.yml');
     expect(stdout).toContain(
-      '✗ SNS topic is not encrypted with customer managed key',
+      'SNS topic is not encrypted with customer managed key',
     );
     expect(stdout).toContain(
-      '[DocId: 0] > Resources[DatabaseAlarmTopic] > Properties > KmsMasterKeyId',
+      '  Path:    [DocId: 0] > Resources[DatabaseAlarmTopic] > Properties >' +
+        EOL +
+        '           KmsMasterKeyId',
     );
     expect(exitCode).toBe(1);
   });
@@ -35,12 +37,10 @@ describe('CloudFormation single file scan', () => {
     const { stdout, exitCode } = await run(
       `snyk iac test ./iac/cloudformation/fargate-valid.json`,
     );
-    expect(stdout).toContain('Testing ./iac/cloudformation/fargate-valid.json');
-    expect(stdout).toContain('Infrastructure as code issues:');
-    expect(stdout).toContain('✗ S3 restrict public bucket control is disabled');
     expect(stdout).toContain(
-      'Resources[CodePipelineArtifactBucket] > Properties > PublicAccessBlockConfiguration > RestrictPublicBuckets',
+      'File:    ./iac/cloudformation/fargate-valid.json',
     );
+    expect(stdout).toContain('SNYK-CC-TF-124');
     expect(exitCode).toBe(1);
   });
 
@@ -49,10 +49,7 @@ describe('CloudFormation single file scan', () => {
       `snyk iac test ./iac/cloudformation/aurora-valid.yml --severity-threshold=high`,
     );
 
-    expect(stdout).toContain('Infrastructure as code issues:');
-    expect(stdout).toContain(
-      'Tested ./iac/cloudformation/aurora-valid.yml for known issues, found 0 issues',
-    );
+    expect(stdout).toContain('No vulnerable paths were found!');
     expect(exitCode).toBe(0);
   });
 
@@ -62,7 +59,9 @@ describe('CloudFormation single file scan', () => {
     );
 
     expect(stdout).toContain(
-      'We were unable to parse the YAML file "./iac/cloudformation/invalid-cfn.yml". Please ensure that it contains properly structured YAML, without any template directives',
+      'Failed to parse YAML file' +
+        EOL +
+        '  Path: ./iac/cloudformation/invalid-cfn.yml',
     );
     expect(exitCode).toBe(2);
   });

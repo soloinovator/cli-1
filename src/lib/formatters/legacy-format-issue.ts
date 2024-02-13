@@ -1,7 +1,6 @@
 const uniq = require('lodash.uniq');
 import chalk from 'chalk';
 
-import config from '../../lib/config';
 import { Options, TestOptions, ShowVulnPaths } from '../../lib/types';
 import { isLocalFolder } from '../../lib/detect';
 import { parsePackageString as snykModule } from 'snyk-module';
@@ -16,9 +15,9 @@ import {
   SEVERITY,
 } from '../../lib/snyk-test/legacy';
 import { formatLegalInstructions } from './legal-license-instructions';
-import { getReachabilityText } from './format-reachability';
 import { colorTextBySeverity } from '../../lib/snyk-test/common';
 import { PATH_SEPARATOR } from '../constants';
+import { getVulnerabilityUrl } from './get-vuln-url';
 
 export function formatIssues(
   vuln: GroupedVuln,
@@ -46,9 +45,7 @@ export function formatIssues(
     }),
     introducedThrough: '  Introduced through: ' + uniquePackages,
     description: '  Description: ' + vuln.title,
-    info:
-      '  Info: ' +
-      chalk.underline(config.PUBLIC_VULN_DB_URL + '/vuln/' + vulnID),
+    info: '  Info: ' + chalk.underline(getVulnerabilityUrl(vulnID)),
     fromPaths: createTruncatedVulnsPathsText(vuln.list, options.showVulnPaths),
     extraInfo: vuln.note ? chalk.bold('\n  Note: ' + vuln.note) : '',
     remediationInfo:
@@ -62,7 +59,6 @@ export function formatIssues(
         ' '.repeat(2) +
         formatLegalInstructions(vuln.legalInstructionsArray, 2)
       : '',
-    reachability: vuln.reachability ? createReachabilityInText(vuln) : '',
   };
 
   return (
@@ -72,7 +68,6 @@ export function formatIssues(
     `${vulnOutput.introducedThrough}\n` +
     vulnOutput.fromPaths +
     // Optional - not always there
-    vulnOutput.reachability +
     vulnOutput.remediationInfo +
     vulnOutput.dockerfilePackage +
     vulnOutput.fixedIn +
@@ -179,17 +174,6 @@ function createFixedInText(vuln: GroupedVuln): string {
   }
 
   return '';
-}
-
-function createReachabilityInText(vuln: GroupedVuln): string {
-  if (!vuln.reachability) {
-    return '';
-  }
-  const reachabilityText = getReachabilityText(vuln.reachability);
-  if (!reachabilityText) {
-    return '';
-  }
-  return `\n  Reachability: ${reachabilityText}`;
 }
 
 function createRemediationText(

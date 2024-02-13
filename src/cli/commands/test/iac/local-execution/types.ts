@@ -65,13 +65,24 @@ export interface IacShareResultsFormat {
   violatedPolicies: PolicyMetadata[];
 }
 
+export interface FormattedTestMeta {
+  isPrivate: boolean;
+  isLicensesEnabled: boolean;
+  org: string;
+  orgPublicId: string;
+  ignoreSettings?: IgnoreSettings | null;
+  projectId?: string;
+  policy?: string;
+  gitRemoteUrl?: string;
+}
+
 // This type is the integration point with the CLI test command, please note it is still partial in the experimental version
 export type FormattedResult = {
   result: {
     cloudConfigResults: Array<PolicyMetadata>;
     projectType: IacProjectTypes;
   };
-  meta: TestMeta;
+  meta: FormattedTestMeta;
   filesystemPolicy: boolean;
   vulnerabilities: AnnotatedIssue[];
   dependencyCount: number;
@@ -114,12 +125,10 @@ export interface IacOrgSettings {
 }
 
 export interface TestMeta {
-  isPrivate: boolean;
-  isLicensesEnabled: boolean;
   org: string;
+  orgPublicId: string;
   ignoreSettings?: IgnoreSettings | null;
   projectId?: string;
-  policy?: string;
   gitRemoteUrl?: string;
 }
 
@@ -149,7 +158,7 @@ export interface PolicyMetadata {
   type?: string;
   subType: string;
   title: string;
-  documentation?: string; // e.g. "https://snyk.io/security-rules/SNYK-CC-K8S-2",
+  documentation?: string; // e.g. "https://security.snyk.io/rules/cloud/SNYK-CC-XXX",
   isGeneratedByCustomRule?: boolean;
   // Legacy field, still included in WASM eval output, but not in use. (not included in new policies)
   description?: string;
@@ -160,6 +169,7 @@ export interface PolicyMetadata {
   resolve: string;
   references: string[];
   // Included only in new policies
+  // Only custom rules will have a string remediation field
   remediation?: Partial<
     Record<'terraform' | 'cloudformation' | 'arm' | 'kubernetes', string>
   >;
@@ -203,6 +213,9 @@ export type IaCTestFlags = Pick<
   path?: string;
   // Allows the caller to provide the path to a WASM bundle.
   rules?: string;
+  // Enables Snyk Cloud custom rules
+  'custom-rules'?: boolean;
+  'snyk-cloud-environment'?: string;
   // Tags and attributes
   'project-tags'?: string;
   'project-environment'?: string;
@@ -354,8 +367,6 @@ export enum IaCErrorCodes {
 
   // Rules bundle errors.
   InvalidUserRulesBundlePathError = 1130,
-  FailedToDownloadRulesBundleError = 1131,
-  FailedToCacheRulesBundleError = 1132,
 
   // Unified Policy Engine executable errors.
   InvalidUserPolicyEnginePathError = 1140,
@@ -386,7 +397,18 @@ export enum IaCErrorCodes {
   FailedToCompile = 2112,
   UnableToReadPath = 2113,
   NoLoadableInput = 2114,
-  FailedToShareResults = 2200,
+  FailedToMakeResourcesResolvers = 2115,
+  ResourcesResolverError = 2116,
+  FailedToProcessResults = 2200,
+  EntitlementNotEnabled = 2201,
+  ReadSettings = 2202,
+  FeatureFlagNotEnabled = 2203,
+
+  // snyk-iac-test non-fatal errors
+  SubmoduleLoadingError = 3000,
+  MissingRemoteSubmodulesError = 3001,
+  EvaluationError = 3002,
+  MissingTermError = 3003,
 }
 
 export interface TestReturnValue {

@@ -7,29 +7,43 @@ import { TestCommandResult } from '../../../../cli/commands/types';
 import {
   formatIacTestFailures,
   formatIacTestSummary,
+  formatSnykIacTestTestData,
   getIacDisplayedIssues,
   IaCTestFailure,
+  IaCTestWarning,
+  shareResultsTip,
   spinnerSuccessMessage,
-} from '../../../formatters/iac-output';
-import { formatSnykIacTestTestData } from '../../../formatters/iac-output';
+} from '../../../formatters/iac-output/text';
 import { jsonStringifyLargeObject } from '../../../json';
-import { IacOrgSettings } from '../../../../cli/commands/test/iac/local-execution/types';
+import {
+  IaCErrorCodes,
+  IaCTestFlags,
+} from '../../../../cli/commands/test/iac/local-execution/types';
 import { convertEngineToSarifResults } from './sarif';
 import { CustomError, FormattedCustomError } from '../../../errors';
 import { SnykIacTestError } from './errors';
-import stripAnsi from 'strip-ansi';
+import stripAnsi = require('strip-ansi');
+import * as path from 'path';
+import { getErrorStringCode } from '../../../../cli/commands/test/iac/local-execution/error-utils';
+import {
+  buildShareResultsSummaryV2,
+  shouldPrintShareResultsTip,
+} from '../../../../cli/commands/test/iac/output';
+import {
+  colors,
+  contentPadding,
+} from '../../../formatters/iac-output/text/utils';
+import * as wrapAnsi from 'wrap-ansi';
+import { formatIacTestWarnings } from '../../../formatters/iac-output/text/failures/list';
+import { IacV2Name, IacV2ShortLink } from '../../constants';
 
 export function buildOutput({
   scanResult,
   testSpinner,
-  projectName,
-  orgSettings,
   options,
 }: {
   scanResult: TestOutput;
   testSpinner?: Ora;
-  projectName: string;
-  orgSettings: IacOrgSettings;
   options: any;
 }): TestCommandResult {
   if (scanResult.results) {
@@ -40,8 +54,6 @@ export function buildOutput({
 
   const { responseData, jsonData, sarifData } = buildTestCommandResultData({
     scanResult,
-    projectName,
-    orgSettings,
     options,
   });
 
@@ -62,20 +74,18 @@ export function buildOutput({
 
 function buildTestCommandResultData({
   scanResult,
-  projectName,
-  orgSettings,
   options,
 }: {
   scanResult: TestOutput;
-  projectName: string;
-  orgSettings: IacOrgSettings;
   options: any;
 }) {
+  const projectName =
+    scanResult.results?.metadata?.projectName ?? path.basename(process.cwd());
+
   const jsonData = jsonStringifyLargeObject(
     convertEngineToJsonResults({
       results: scanResult,
       projectName,
-      orgSettings,
     }),
   );
 
@@ -83,15 +93,11 @@ function buildTestCommandResultData({
     convertEngineToSarifResults(scanResult),
   );
 
-  const isPartialSuccess =
-    scanResult.results?.resources?.length || !scanResult.errors?.length;
-  if (!isPartialSuccess) {
-    throw new NoSuccessfulScansError(
-      { json: jsonData, sarif: sarifData },
-      scanResult.errors!,
-      options,
-    );
-  }
+  assertHasSuccessfulScans(
+    scanResult,
+    { json: jsonData, sarif: sarifData },
+    options,
+  );
 
   let responseData: string;
   if (options.json) {
@@ -99,11 +105,15 @@ function buildTestCommandResultData({
   } else if (options.sarif) {
     responseData = sarifData;
   } else {
-    responseData = buildTextOutput({ scanResult, projectName, orgSettings });
+    responseData = buildTextOutput({
+      scanResult,
+      projectName,
+      options,
+    });
   }
 
-  const isFoundIssues = !!scanResult.results?.vulnerabilities?.length;
-  if (isFoundIssues) {
+  const hasVulnerabilities = !!scanResult.results?.vulnerabilities?.length;
+  if (hasVulnerabilities) {
     throw new FoundIssuesError({
       response: responseData,
       json: jsonData,
@@ -119,18 +129,18 @@ const SEPARATOR = '\n-------------------------------------------------------\n';
 function buildTextOutput({
   scanResult,
   projectName,
-  orgSettings,
+  options,
 }: {
   scanResult: TestOutput;
   projectName: string;
-  orgSettings: IacOrgSettings;
+  options: IaCTestFlags;
 }): string {
   let response = '';
 
   const testData = formatSnykIacTestTestData(
     scanResult.results,
     projectName,
-    orgSettings.meta.org,
+    scanResult.settings.org,
   );
 
   response +=
@@ -138,6 +148,19 @@ function buildTextOutput({
     getIacDisplayedIssues(testData.resultsBySeverity, {
       shouldShowLineNumbers: true,
     });
+
+  if (scanResult.warnings) {
+    const testWarnings: IaCTestWarning[] = scanResult.warnings.map((error) => ({
+      filePath: error.fields.path,
+      warningReason: error.userMessage,
+      term: error.fields.term,
+      module: error.fields.module,
+      modules: error.fields.modules,
+      expressions: error.fields.expressions,
+    }));
+
+    response += EOL.repeat(2) + formatIacTestWarnings(testWarnings);
+  }
 
   if (scanResult.errors) {
     const testFailures: IaCTestFailure[] = scanResult.errors.map((error) => ({
@@ -154,7 +177,58 @@ function buildTextOutput({
   response += formatIacTestSummary(testData);
   response += EOL;
 
+  if (options.report) {
+    response += buildShareResultsSummaryV2({
+      orgName: scanResult.settings.org,
+      projectName,
+      options,
+      isIacCustomRulesEntitlementEnabled: false, // TODO: update when we add custom rules support
+      isIacShareCliResultsCustomRulesSupported: false, // TODO: update when we add custom rules support
+    });
+    response += EOL;
+  }
+
+  if (shouldPrintShareResultsTip(options)) {
+    response += SEPARATOR + EOL + shareResultsTip + EOL;
+  }
+
+  response += EOL;
+  response += colors.title('Info') + EOL;
+  response += EOL;
+  response += wrapWithPadding(infoMessage(scanResult), 80) + EOL;
+
   return response;
+}
+
+function wrapWithPadding(s: string, columns: number): string {
+  return wrapAnsi(s, columns)
+    .split('\n')
+    .map((s) => contentPadding + s)
+    .join('\n');
+}
+
+function infoMessage(orgSettings: TestOutput): string {
+  return `Your organization ${orgSettings.settings.org} is using ${IacV2Name}. To switch to Current IaC, use --org=<ORG_ID> to select a different organization. For more information about ${IacV2Name}, see ${IacV2ShortLink}.`;
+}
+
+function assertHasSuccessfulScans(
+  scanResult: TestOutput,
+  responseData: Omit<ResponseData, 'response'>,
+  options: { json?: boolean; sarif?: boolean },
+): void {
+  const hasResources = !!scanResult.results?.resources?.length;
+  const hasErrors = !!scanResult.errors?.length;
+  const hasSuccessfulScans = hasResources || !hasErrors;
+
+  if (!hasSuccessfulScans) {
+    const hasLoadableInput = scanResult.errors!.some(
+      (error) => error.code !== IaCErrorCodes.NoLoadableInput,
+    );
+
+    throw hasLoadableInput
+      ? new NoSuccessfulScansError(responseData, scanResult.errors!, options)
+      : new NoLoadableInputError(responseData, scanResult.errors!, options);
+  }
 }
 
 interface ResponseData {
@@ -192,8 +266,9 @@ export class NoSuccessfulScansError extends FormattedCustomError {
           )
         : stripAnsi(message),
     );
-    this.strCode = firstErr.strCode;
+
     this.code = firstErr.code;
+    this.strCode = firstErr.strCode;
     this.json = isText ? responseData.json : message;
     this.jsonStringifiedResults = responseData.json;
     this.sarifStringifiedResults = responseData.sarif;
@@ -206,6 +281,19 @@ export class NoSuccessfulScansError extends FormattedCustomError {
 
   public set path(path1: string) {
     this.fields.path = path1;
+  }
+}
+
+export class NoLoadableInputError extends NoSuccessfulScansError {
+  constructor(
+    responseData: Omit<ResponseData, 'response'>,
+    errors: SnykIacTestError[],
+    options: { json?: boolean; sarif?: boolean },
+  ) {
+    super(responseData, errors, options);
+
+    (this.code = IaCErrorCodes.NoFilesToScanError),
+      (this.strCode = getErrorStringCode(this.code));
   }
 }
 

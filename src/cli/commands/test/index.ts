@@ -4,6 +4,7 @@ const cloneDeep = require('lodash.clonedeep');
 const assign = require('lodash.assign');
 import chalk from 'chalk';
 import { MissingArgError } from '../../../lib/errors';
+import * as theme from '../../../lib/theme';
 
 import * as snyk from '../../../lib';
 import { Options, TestOptions } from '../../../lib/types';
@@ -48,6 +49,12 @@ import { checkOSSPaths } from '../../../lib/check-paths';
 const debug = Debug('snyk-test');
 const SEPARATOR = '\n-------------------------------------------------------\n';
 
+const appVulnsReleaseWarningMsg = `${theme.icon.WARNING} Important: Beginning January 24th, 2023, application dependencies in container
+images will be scanned by default when using the snyk container test/monitor
+commands. If you are using Snyk in a CI pipeline, action may be required. Read
+https://snyk.io/blog/securing-container-applications-using-the-snyk-cli/ for
+more info.`;
+
 // TODO: avoid using `as any` whenever it's possible
 
 export default async function test(
@@ -58,10 +65,7 @@ export default async function test(
   const options = setDefaultTestOptions(originalOptions);
   if (originalOptions.iac) {
     // temporary placeholder for the "new" flow that integrates with UPE
-    if (
-      (await hasFeatureFlag('iacCliUnifiedEngine', options)) &&
-      options.experimental
-    ) {
+    if (await hasFeatureFlag('iacIntegratedExperience', options)) {
       return await iacTestCommandV2.test(paths, originalOptions);
     } else {
       return await iacTestCommand(...args);
@@ -91,9 +95,33 @@ export default async function test(
     throw new MissingArgError();
   }
 
-  // TODO remove once https://github.com/snyk/cli/pull/3433 is merged
-  if (options.docker && !options['app-vulns']) {
-    options['exclude-app-vulns'] = true;
+  if (options.docker) {
+    // order is important here, we want:
+    // 1) exclude-app-vulns set -> no app vulns
+    // 2) app-vulns set -> app-vulns
+    // 3) neither set -> containerAppVulnsEnabled
+    if (options['exclude-app-vulns']) {
+      options['exclude-app-vulns'] = true;
+    } else if (options['app-vulns']) {
+      options['exclude-app-vulns'] = false;
+    } else {
+      options['exclude-app-vulns'] = !(await hasFeatureFlag(
+        'containerCliAppVulnsEnabled',
+        options,
+      ));
+
+      // we can't print the warning message with JSON output as that would make
+      // the JSON output invalid.
+      // We also only want to print the message if the user did not overwrite
+      // the default with one of the flags.
+      if (
+        options['exclude-app-vulns'] &&
+        !options['json'] &&
+        !options['sarif']
+      ) {
+        console.log(theme.color.status.warn(appVulnsReleaseWarningMsg));
+      }
+    }
   }
 
   const ecosystem = getEcosystemForTest(options);
@@ -179,6 +207,8 @@ export default async function test(
     stringifiedSarifData,
   } = extractDataToSendFromResults(results, mappedResults, options);
 
+  const jsonPayload = stringifiedJsonData.length === 0 ? dataToSend : null;
+
   if (options.json || options.sarif) {
     // if all results are ok (.ok == true)
     if (mappedResults.every((res) => res.ok)) {
@@ -186,6 +216,7 @@ export default async function test(
         stringifiedData,
         stringifiedJsonData,
         stringifiedSarifData,
+        jsonPayload,
       );
     }
 
@@ -200,6 +231,7 @@ export default async function test(
             stringifiedData,
             stringifiedJsonData,
             stringifiedSarifData,
+            jsonPayload,
           );
         }
       }
@@ -263,6 +295,7 @@ export default async function test(
     error.code = errorResults[0].code;
     error.userMessage = errorResults[0].userMessage;
     error.strCode = errorResults[0].strCode;
+    error.innerError = errorResults[0].innerError;
     throw error;
   }
 
@@ -281,6 +314,7 @@ export default async function test(
           response,
           stringifiedJsonData,
           stringifiedSarifData,
+          jsonPayload,
         );
       }
     }
@@ -303,6 +337,10 @@ export default async function test(
     error.userMessage = vulnerableResults[0].userMessage;
     error.jsonStringifiedResults = stringifiedJsonData;
     error.sarifStringifiedResults = stringifiedSarifData;
+    // conditionally set jsonPayload for now, to determine whether to stream data to destination
+    if (stringifiedJsonData.length === 0) {
+      error.jsonPayload = dataToSend;
+    }
     throw error;
   }
 
@@ -316,6 +354,7 @@ export default async function test(
     response,
     stringifiedJsonData,
     stringifiedSarifData,
+    jsonPayload,
   );
 }
 

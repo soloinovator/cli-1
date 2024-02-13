@@ -14,7 +14,7 @@ interface Pkg {
   version?: string;
 }
 
-interface Patch {
+export interface Patch {
   version: string;
   id: string;
   urls: string[];
@@ -26,13 +26,6 @@ export enum SEVERITY {
   MEDIUM = 'medium',
   HIGH = 'high',
   CRITICAL = 'critical',
-}
-
-export enum REACHABILITY {
-  FUNCTION = 'function',
-  PACKAGE = 'package',
-  NOT_REACHABLE = 'not-reachable',
-  NO_INFO = 'no-info',
 }
 
 export interface VulnMetaData {
@@ -63,7 +56,6 @@ export interface GroupedVuln {
   isFixable: boolean;
   fixedIn: string[];
   legalInstructionsArray?: LegalInstruction[];
-  reachability?: REACHABILITY;
 }
 
 export interface LegalInstruction {
@@ -90,23 +82,17 @@ export interface IssueData {
   severity: SEVERITY;
   fixedIn: string[];
   legalInstructions?: string;
-  reachability?: REACHABILITY;
   packageManager?: SupportedProjectTypes;
   from?: string[];
   name?: string;
 }
 
+export interface IssueDataUnmanaged extends IssueData {
+  upgradePath?: (string | boolean)[];
+  isPatchable?: boolean;
+}
+
 export type CallPath = string[];
-
-export interface ReachableFunctionPaths {
-  functionName: string;
-  callPaths: CallPath[];
-}
-
-export interface ReachablePaths {
-  pathCount: number;
-  paths: ReachableFunctionPaths[];
-}
 
 interface AnnotatedIssue extends IssueData {
   credit: string[];
@@ -118,6 +104,8 @@ interface AnnotatedIssue extends IssueData {
   isPatchable: boolean;
   severity: SEVERITY;
   originalSeverity?: SEVERITY;
+  cvssScore?: number;
+  lineNumber?: number;
 
   // These fields present for "node_module" based scans to allow remediation
   bundled?: any;
@@ -131,7 +119,6 @@ interface AnnotatedIssue extends IssueData {
   note?: string | false;
   publicationTime?: string;
 
-  reachablePaths?: ReachablePaths;
   identifiers?: {
     [name: string]: string[];
   };
@@ -197,6 +184,8 @@ export interface TestResult extends LegacyVulnApiResult {
   displayTargetFile?: string; // used for display only
   foundProjectCount?: number;
   scanResult?: ScanResult;
+  hasUnknownVersions?: boolean;
+  path?: string;
 }
 
 interface UpgradePathItem {
@@ -246,7 +235,7 @@ export interface Issue {
 
 export interface TestDependenciesResult {
   issuesData: {
-    [issueId: string]: IssueData;
+    [issueId: string]: IssueDataUnmanaged;
   };
   issues: Issue[];
   docker?: {

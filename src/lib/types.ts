@@ -17,8 +17,6 @@ export interface TestOptions {
   pruneRepeatedSubdependencies?: boolean;
   showVulnPaths: ShowVulnPaths;
   failOn?: FailOn;
-  reachableVulns?: boolean;
-  reachableVulnsTimeout?: number;
   initScript?: string;
   yarnWorkspaces?: boolean;
   gradleSubProject?: boolean;
@@ -54,6 +52,7 @@ export interface Options {
   insecure?: boolean;
   'dry-run'?: boolean;
   allSubProjects?: boolean;
+  mavenAggregateProject?: boolean;
   'project-name'?: string;
   'show-vulnerable-paths'?: string;
   packageManager?: SupportedPackageManagers;
@@ -74,6 +73,7 @@ export interface Options {
   experimental?: boolean;
   // Used with the Docker plugin only. Allows application scanning.
   'app-vulns'?: boolean;
+  'exclude-app-vulns'?: boolean;
   debug?: boolean;
   sarif?: boolean;
   'group-issues'?: boolean;
@@ -87,6 +87,9 @@ export interface Options {
   report?: boolean;
   'var-file'?: string;
   'target-name'?: string;
+  // Used only with the Code (SAST) plugin. Allows running tests with reporting for existing projects.
+  'project-id'?: string;
+  'commit-id'?: string;
 }
 
 // TODO(kyegupov): catch accessing ['undefined-properties'] via noImplicitAny
@@ -108,8 +111,7 @@ export interface MonitorOptions {
   experimental?: boolean;
   // Used with the Docker plugin only. Allows application scanning.
   'app-vulns'?: boolean;
-  reachableVulns?: boolean;
-  reachableVulnsTimeout?: number;
+  'exclude-app-vulns'?: boolean;
   initScript?: string;
   yarnWorkspaces?: boolean;
   'max-depth'?: number;
@@ -219,10 +221,6 @@ export type SupportedUserReachableFacingCliArgs =
   | 'policy'
   | 'project-name'
   | 'prune-repeated-subdependencies'
-  | 'reachable'
-  | 'reachable-timeout'
-  | 'reachable-vulns'
-  | 'reachable-vulns-timeout'
   | 'rules'
   | 'scan-all-unmanaged'
   | 'severity-threshold'
@@ -231,7 +229,9 @@ export type SupportedUserReachableFacingCliArgs =
   | 'strict-out-of-sync'
   | 'sub-project'
   | 'trust-policies'
-  | 'yarn-workspaces';
+  | 'yarn-workspaces'
+  | 'maven-aggregate-project'
+  | 'gradle-normalize-deps';
 
 export enum SupportedCliCommands {
   version = 'version',

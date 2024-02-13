@@ -14,16 +14,16 @@ import {
   createIgnorePattern,
   verifyServiceMappingExists,
 } from '../service-mappings';
-import { validateArgs } from '../drift';
 import * as debugLib from 'debug';
 import { makeRequest } from '../../request';
+import * as child_process from 'child_process';
 import { StdioOptions } from 'child_process';
 import * as path from 'path';
-import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { createDirIfNotExists, isExe } from '../file-utils';
+import { restoreEnvProxy } from '../env-utils';
 
 const debug = debugLib('driftctl');
 
@@ -35,29 +35,29 @@ export const DCTL_EXIT_CODES = {
   EXIT_ERROR: 2,
 };
 
-export const driftctlVersion = 'v0.35.2';
+export const driftctlVersion = 'v0.40.0';
 
 const driftctlChecksums = {
   driftctl_darwin_amd64:
-    '1e21863bb99d104da8a1e33999563cc172ca51bb5b6ac7d3a4bd9678e0285067',
+    '4eb86bd4a1e965c2552879795434143f1db974b2d795581b9ddb69d0bd8a245a',
   'driftctl_windows_386.exe':
-    '20dc49a4faebfdbdf9f9198499ba2426ea6cda0666e82d81cd4e08a41516d5e0',
+    'a02f079cb128ba46396db9654bc8bb8066ebde0539ebbeb401a40a81dfc8f733',
   driftctl_darwin_arm64:
-    '37b7a4c72f4db62b056f1b534eb93fbb8dd32c303719ed4af87d9bd4d903fcf6',
+    'dfdee8138eb817cc066b8bf915c808fbd53536ee1757b34ca6e518e1c2ad1ba5',
   driftctl_linux_arm64:
-    '3e6dabf013e097be1aac0e6e0f4ebcc3ada85a1906c6841d57fbe96c9ee9857e',
+    '8816f1378138c2ce585c762e109b5fdd41b7144b915e97759ceae946db023540',
   'driftctl_windows_arm.exe':
-    '480c330fefdc6e1d58de943817556a1cd183d32d58b6cb20c8127cd3b8753dc4',
+    '6217151b4168e93ffdd6e005cb1cf03768f371cd6b412f53605fde46343c08d1',
   driftctl_linux_amd64:
-    '80b7b99c343e1502f54321987c9f00fa3c381fbea819b1e440a0377b18706fb1',
+    '84e2462454956a4df794a24e0f4d2351299212d772b8602fc5070e6174ac1324',
   'driftctl_windows_amd64.exe':
-    'bbc71047bd75e1bcd80752b7c03c27c0d8d7d93bec72a70eb8bc8220687805de',
+    '1561fd04e3d428c39ae95f81214517bbf62e8333156bf538a2d385005e350c8b',
   'driftctl_windows_arm64.exe':
-    'be1a5564ec3351503caa16121d192ad8d8e8f287a5324939214b20177c7363e4',
+    '76f939d836da64fa9dab63f0eeffd09a0de7e353b034296b8f1582cdff6f2a61',
   driftctl_linux_arm:
-    'd04c911bdb86092743077bfbb025bfb8391978236bb381122594aeaa77f9a68f',
+    '7f669ca49e152779a09587ff0e58dedd3996229cc8ff3e5cdc371895eaa994f6',
   driftctl_linux_386:
-    'e720c2f3c25594c7b83ffb2123c461283589b6ee73b9a59c1c4f48bb2bac2775',
+    'e6bbdf341148e81511d30dd5afe2fa2ef08f3b0b75079bf0bde2b790d75beb8a',
 };
 
 const dctlBaseUrl = 'https://static.snyk.io/cli/driftctl/';
@@ -149,14 +149,6 @@ const generateScanFlags = async (
     args.push('--strict');
   }
 
-  if (options.deep || options.all) {
-    args.push('--deep');
-  }
-
-  if (options['only-managed'] || options.drift) {
-    args.push('--only-managed');
-  }
-
   if (options['only-unmanaged']) {
     args.push('--only-unmanaged');
   }
@@ -237,7 +229,7 @@ export const runDriftCTL = async ({
   stdio?: StdioOptions;
 }): Promise<DriftctlExecutionResult> => {
   const path = await findOrDownload();
-  await validateArgs(options);
+
   const args = await generateArgs(options, driftIgnore);
 
   if (!stdio) {
@@ -246,9 +238,14 @@ export const runDriftCTL = async ({
 
   debug('running driftctl %s ', args.join(' '));
 
+  const dctl_env: NodeJS.ProcessEnv = restoreEnvProxy({
+    ...process.env,
+    DCTL_IS_SNYK: 'true',
+  });
+
   const p = child_process.spawn(path, args, {
     stdio,
-    env: { ...process.env, DCTL_IS_SNYK: 'true' },
+    env: dctl_env,
   });
 
   let stdout = '';

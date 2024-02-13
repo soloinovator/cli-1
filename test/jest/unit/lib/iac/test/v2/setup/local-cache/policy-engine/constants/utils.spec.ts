@@ -2,8 +2,8 @@ import * as os from 'os';
 import {
   formatPolicyEngineFileName,
   getChecksum,
-} from '../../../../../../../../../../../src/lib/iac/test/v2/setup/local-cache/policy-engine/constants/utils';
-import { policyEngineReleaseVersion } from '../../../../../../../../../../../src/lib/iac/test/v2/setup/local-cache/policy-engine/constants/index';
+} from '../../../../../../../../../../../src/lib/iac/test/v2/local-cache/policy-engine/constants/utils';
+import { policyEngineReleaseVersion } from '../../../../../../../../../../../src/lib/iac/test/v2/local-cache/policy-engine/constants/index';
 
 describe('formatPolicyEngineFileName', () => {
   const testReleaseVersion = '6.6.6';
@@ -43,7 +43,6 @@ describe('getChecksum', () => {
     expectedFileName
     ${`snyk-iac-test_${policyEngineReleaseVersion}_Darwin_arm64`}
     ${`snyk-iac-test_${policyEngineReleaseVersion}_Darwin_x86_64`}
-    ${`snyk-iac-test_${policyEngineReleaseVersion}_Windows_arm64.exe`}
     ${`snyk-iac-test_${policyEngineReleaseVersion}_Windows_x86_64.exe`}
     ${`snyk-iac-test_${policyEngineReleaseVersion}_Linux_arm64`}
     ${`snyk-iac-test_${policyEngineReleaseVersion}_Linux_x86_64`}

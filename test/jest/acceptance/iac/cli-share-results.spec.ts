@@ -53,7 +53,7 @@ describe('CLI Share Results', () => {
       expect(stdout).toContain(
         `Your test results are available at: http://localhost:${server.getPort()}/org/test-org/projects`,
       );
-      expect(stdout).toContain('under the name fixtures');
+      expect(stdout).toContain('under the name: fixtures');
       expect(exitCode).toBe(1);
     });
 
@@ -174,11 +174,47 @@ describe('CLI Share Results', () => {
       server.setNextStatusCode(429);
 
       const { stdout, exitCode } = await run(
-        'snyk iac test ./iac/arm/rule_test.json --report --project-business-criticality=high',
+        'snyk iac test ./iac/arm/rule_test.json --report --project-business-criticality=high --org=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       );
 
       expect(stdout).toMatch(/test limit reached/i);
       expect(exitCode).toEqual(2);
+    });
+
+    it('should filter out NONE custom policies severity issues and then forward', async () => {
+      const { exitCode } = await run(
+        'snyk iac test ./iac/arm/rule_test.json --report --org=custom-policies',
+      );
+
+      const requests = server
+        .getRequests()
+        .filter((request) => request.url?.includes('/iac-cli-share-results'));
+
+      expect(requests.length).toEqual(1);
+      const [request] = requests;
+      expect(request.body).toEqual(
+        expect.objectContaining({
+          contributors: expect.any(Array),
+          scanResults: [
+            {
+              identity: {
+                type: 'armconfig',
+                targetFile: 'iac/arm/rule_test.json',
+              },
+              facts: [],
+              findings: expect.any(Array),
+              policy: '',
+              name: 'fixtures',
+              target: {
+                name: 'fixtures',
+              },
+            },
+          ],
+        }),
+      );
+      // The other SNYK-CC-AZURE-543 issue has been filtered out
+      expect(request.body.scanResults[0].findings.length).toEqual(1);
+      expect(exitCode).toEqual(1);
     });
 
     describe('with target reference', () => {

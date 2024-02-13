@@ -5,10 +5,6 @@ import {
   TestOptions,
 } from '../../types';
 import {
-  getReachabilityJson,
-  summariseReachableVulns,
-} from '../format-reachability';
-import {
   GroupedVuln,
   SEVERITY,
   TestResult,
@@ -23,7 +19,7 @@ import { formatIssuesWithRemediation } from '../remediation-based-format-issues'
 import { formatIssues } from '../legacy-format-issue';
 import { formatDockerBinariesIssues } from '../docker';
 import { createSarifOutputForContainers } from '../sarif-output';
-import { createSarifOutputForIac } from '../iac-output';
+import { createSarifOutputForIac } from '../iac-output/sarif';
 import { isNewVuln, isVulnFixable } from '../../vuln-helpers';
 import { jsonStringifyLargeObject } from '../../json';
 import { createSarifOutputForOpenSource } from '../open-source-sarif-output';
@@ -66,14 +62,6 @@ function formatJsonVulnerabilityStructure(jsonResult, options: Options) {
       }, {}),
     ).reverse();
   }
-
-  if (jsonResult.vulnerabilities) {
-    jsonResult.vulnerabilities.forEach((vuln) => {
-      if (vuln.reachability) {
-        vuln.reachability = getReachabilityJson(vuln.reachability);
-      }
-    });
-  }
 }
 
 export function extractDataToSendFromResults(
@@ -105,7 +93,7 @@ export function extractDataToSendFromResults(
   if (options.docker && jsonResults.length > 1 && !options.experimental) {
     const appVulnsData = jsonData.splice(1);
     jsonData = jsonData[0];
-    if (jsonData.vulnerabilities.length === 0) {
+    if (jsonData.vulnerabilities?.length === 0) {
       // to avoid confusion with other vulns that might be found
       jsonData.summary = 'No known operating system vulnerabilities';
     }
@@ -115,6 +103,13 @@ export function extractDataToSendFromResults(
   let stringifiedJsonData = '';
   if (options.json || options['json-file-output']) {
     stringifiedJsonData = jsonStringifyLargeObject(jsonData);
+  }
+
+  // TODO: Remove this when we support streaming JSON to stdout
+  if (stringifiedJsonData.length === 0 && options['json']) {
+    console.warn(
+      "'--json' does not work for very large objects - try just using '--json-file-output=<filePath>' instead",
+    );
   }
 
   const dataToSend = options.sarif ? sarifData : jsonData;
@@ -154,6 +149,7 @@ export function getDisplayedOutput(
   projectType: SupportedProjectTypes,
   meta: string,
   prefix: string,
+  hasUnknownVersions: string,
   multiProjAdvice: string,
   dockerAdvice: string,
 ): string {
@@ -180,26 +176,14 @@ export function getDisplayedOutput(
     vulnCountText += '.';
   }
 
-  const reachableVulnsText =
-    options.reachableVulns && vulnCount > 0
-      ? ` ${summariseReachableVulns(res.vulnerabilities)}`
-      : '';
-
   const summary =
-    testedInfoText +
-    ', ' +
-    chalk.red.bold(vulnCountText) +
-    chalk.blue.bold(reachableVulnsText);
+    testedInfoText + ', ' + chalk.red.bold(vulnCountText) + hasUnknownVersions;
 
   const fixTip = showFixTip(projectType, res, options);
   const fixAdvice = fixTip ? `\n\n${fixTip}` : '';
 
   const dockerfileWarning = getDockerfileWarning(res.scanResult);
-  const dockerSuggestion = getDockerSuggestionText(
-    options,
-    config,
-    res?.docker?.baseImage,
-  );
+  const dockerSuggestion = getDockerSuggestionText(options, res);
   const dockerDocsLink = getDockerRemediationDocsLink(dockerAdvice, config);
 
   const vulns = res.vulnerabilities || [];
@@ -275,31 +259,58 @@ export function dockerUserCTA(options) {
   return '';
 }
 
-function getDockerSuggestionText(options, config, baseImageRes): string {
-  if (!options.docker || options.isDockerUser) {
+function getDockerSuggestionText(
+  options: Options & TestOptions,
+  result: TestResult,
+): string {
+  if (
+    config?.disableSuggestions === 'true' ||
+    !options.docker ||
+    options.isDockerUser
+  ) {
     return '';
   }
 
-  let dockerSuggestion = '';
-  if (config && config.disableSuggestions !== 'true') {
-    const optOutSuggestions =
-      '\n\nTo remove this message in the future, please run `snyk config set disableSuggestions=true`';
-    if (!options.file) {
-      if (!baseImageRes) {
-        dockerSuggestion +=
-          chalk.bold.white(
-            '\n\nSnyk wasn’t able to auto detect the base image, use `--file` option to get base image remediation advice.' +
-              `\nExample: $ snyk container test ${options.path} --file=path/to/Dockerfile`,
-          ) + optOutSuggestions;
-      }
-    } else if (!options['exclude-base-image-vulns']) {
-      dockerSuggestion +=
-        chalk.bold.white(
-          '\n\nPro tip: use `--exclude-base-image-vulns` to exclude from display Docker base image vulnerabilities.',
-        ) + optOutSuggestions;
-    }
+  const tips: string[] = [];
+  // exclude-base-image-vulns flag tip
+  if (options.file && !options['exclude-base-image-vulns']) {
+    tips.push(
+      'Pro tip: use `--exclude-base-image-vulns` to exclude from display Docker base image vulnerabilities.',
+    );
   }
-  return dockerSuggestion;
+
+  // dockerfile flag tip for base image
+  if (!options.file && !result?.docker?.baseImage) {
+    tips.push(
+      `Snyk wasn’t able to auto detect the base image, use \`--file\` option to get base image remediation advice.
+Example: $ snyk container test ${options.path} --file=path/to/Dockerfile`,
+    );
+  }
+
+  // disable-app-vulns flag tip
+  if (options.docker && result.targetFile && result.uniqueCount > 0) {
+    tips.push(
+      'Snyk found some vulnerabilities in your image applications (Snyk searches for these vulnerabilities by default). See https://snyk.co/app-vulns for more information.',
+    );
+  }
+
+  if (tips.length === 0) {
+    return '';
+  }
+
+  return (
+    '\n\n' +
+    tips
+      // not sure why the tip to disable tips wasn't marked as white, maybe we should change that too?
+      .map((tip) => chalk.bold.white(tip))
+      .concat(
+        // add tip to disable tips
+        `To remove ${
+          tips.length > 1 ? 'these messages' : 'this message'
+        } in the future, please run \`snyk config set disableSuggestions=true\``,
+      )
+      .join('\n\n')
+  );
 }
 function getDockerfileWarning(scanResult: ScanResult | undefined): string {
   if (!scanResult) {
@@ -376,7 +387,6 @@ export function groupVulnerabilities(
       map[curr.id].dockerBaseImage = curr.dockerBaseImage;
       map[curr.id].nearestFixedInVersion = curr.nearestFixedInVersion;
       map[curr.id].legalInstructionsArray = curr.legalInstructionsArray;
-      map[curr.id].reachability = curr.reachability;
     }
 
     map[curr.id].list.push(curr);

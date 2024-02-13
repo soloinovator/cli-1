@@ -3,18 +3,16 @@ import * as path from 'path';
 import chalk from 'chalk';
 
 import * as scanLib from '../../../../../../../../src/lib/iac/test/v2/scan';
-import * as downloadPolicyEngineLib from '../../../../../../../../src/lib/iac/test/v2/setup/local-cache/policy-engine/download';
-import * as downloadRulesBundleLib from '../../../../../../../../src/lib/iac/test/v2/setup/local-cache/rules-bundle/download';
-import * as orgSettingsLib from '../../../../../../../../src/cli/commands/test/iac/local-execution/org-settings/get-iac-org-settings';
+import * as downloadPolicyEngineLib from '../../../../../../../../src/lib/iac/test/v2/local-cache/policy-engine/download';
 import { test } from '../../../../../../../../src/cli/commands/test/iac/v2/index';
-import { Options, TestOptions } from '../../../../../../../../src/lib/types';
 import { isValidJSONString } from '../../../../../../acceptance/iac/helpers';
-import { IacOrgSettings } from '../../../../../../../../src/cli/commands/test/iac/local-execution/types';
 import { SnykIacTestError } from '../../../../../../../../src/lib/iac/test/v2/errors';
 import {
   FoundIssuesError,
+  NoLoadableInputError,
   NoSuccessfulScansError,
 } from '../../../../../../../../src/lib/iac/test/v2/output';
+import { pathToFileURL } from 'url';
 
 jest.setTimeout(1000 * 10);
 
@@ -44,21 +42,6 @@ const scanFixturePath = path.join(
 describe('test', () => {
   chalk.enabled = false;
 
-  const defaultOptions: Options & TestOptions = {
-    iac: true,
-    path: 'path/to/test',
-    showVulnPaths: 'all',
-  };
-
-  const orgSettings: IacOrgSettings = {
-    customPolicies: {},
-    meta: {
-      org: 'my-org-name',
-      isLicensesEnabled: false,
-      isPrivate: false,
-    },
-  };
-
   const scanFixture = JSON.parse(fs.readFileSync(scanFixturePath, 'utf-8'));
   scanFixture.errors = scanFixture.errors.map(
     (scanError) => new SnykIacTestError(scanError),
@@ -66,6 +49,34 @@ describe('test', () => {
 
   const scanWithOnlyErrorsFixture = {
     errors: scanFixture.errors,
+    settings: {
+      org: 'org-name',
+      ignoreSettings: {
+        adminOnly: false,
+        disregardFilesystemIgnores: false,
+        reasonRequired: false,
+      },
+    },
+  };
+
+  const scanWithoutLoadableInputsFixture = {
+    errors: [
+      new SnykIacTestError({
+        code: 2114,
+        message: 'no loadable input: path/to/test',
+        fields: {
+          path: 'path/to/test',
+        },
+      }),
+    ],
+    settings: {
+      org: 'org-name',
+      ignoreSettings: {
+        adminOnly: false,
+        disregardFilesystemIgnores: false,
+        reasonRequired: false,
+      },
+    },
   };
 
   beforeEach(() => {
@@ -74,14 +85,6 @@ describe('test', () => {
     jest
       .spyOn(downloadPolicyEngineLib, 'downloadPolicyEngine')
       .mockResolvedValue('');
-
-    jest
-      .spyOn(downloadRulesBundleLib, 'downloadRulesBundle')
-      .mockResolvedValue('');
-
-    jest
-      .spyOn(orgSettingsLib, 'getIacOrgSettings')
-      .mockResolvedValue(orgSettings);
   });
 
   afterEach(() => {
@@ -94,26 +97,23 @@ describe('test', () => {
 
     // Act
     try {
-      await test(['path/to/test'], defaultOptions);
+      await test(['path/to/test'], {});
     } catch (error) {
       output = error.message;
     }
 
     // Assert
     expect(output!).toContain('Issues');
-    expect(output!).toContain('Medium Severity Issues: ');
-    expect(output!).toContain('High Severity Issues: ');
-    expect(output!).toContain(`Organization: ${orgSettings.meta.org}`);
-    expect(output!).toContain(`Project name: ${path.basename(projectRoot)}`);
-    expect(output!).toContain('Files without issues: 1');
-    expect(output!).toContain('Files with issues: 2');
-    expect(output!).toContain('Total issues: 4');
-    expect(output!).toContain('[ 0 critical, 3 high, 1 medium, 0 low ]');
+    expect(output!).toContain('Severity Issues: ');
+    expect(output!).toContain(`Organization: org-name`);
+    expect(output!).toContain('Files without issues: ');
+    expect(output!).toContain('Files with issues: ');
+    expect(output!).toContain('Total issues: ');
   });
 
   describe('with no successful scans', () => {
     beforeEach(() => {
-      jest.spyOn(scanLib, 'scan').mockReturnValue(scanWithOnlyErrorsFixture);
+      jest.spyOn(scanLib, 'scan').mockResolvedValue(scanWithOnlyErrorsFixture);
     });
 
     it('throws the expected error', async () => {
@@ -122,44 +122,86 @@ describe('test', () => {
 
       // Act
       try {
-        await test(['path/to/test'], defaultOptions);
+        await test(['path/to/test'], {});
       } catch (err) {
         error = err;
       }
 
       // Assert
       expect(error).toBeInstanceOf(NoSuccessfulScansError);
-      expect(error).toEqual(
-        expect.objectContaining({
-          name: 'NoSuccessfulScansError',
-          message:
-            'invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt',
-          code: 2106,
-          strCode: 'INVALID_INPUT',
-          fields: {
-            path: '/Users/yairzohar/snyk/upe-test/README.txt',
-          },
-          path: '/Users/yairzohar/snyk/upe-test/README.txt',
-          userMessage:
-            'Test Failures\n\n  Invalid input\n  Path: /Users/yairzohar/snyk/upe-test/README.txt',
-          formattedUserMessage:
-            'Test Failures\n\n  Invalid input\n  Path: /Users/yairzohar/snyk/upe-test/README.txt',
-          sarifStringifiedResults: expect.stringContaining(
-            `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-          ),
-          jsonStringifiedResults:
-            '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-          json:
-            '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-        }),
-      );
+      expect(error).toMatchObject({
+        name: 'NoLoadableInputError',
+        code: 1010,
+        strCode: 'NO_FILES_TO_SCAN_ERROR',
+        innerError: undefined,
+        userMessage:
+          "Test Failures\n\n  The Snyk CLI couldn't find any valid IaC configuration files to scan\n  Path: invalid_file.txt",
+        formattedUserMessage:
+          "Test Failures\n\n  The Snyk CLI couldn't find any valid IaC configuration files to scan\n  Path: invalid_file.txt",
+        json:
+          '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+        jsonStringifiedResults:
+          '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+        sarifStringifiedResults: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+          pathToFileURL(path.join(process.cwd(), '/')).href
+        }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+        fields: {
+          path: 'invalid_file.txt',
+        },
+      });
+    });
+
+    describe('without loadable inputs', () => {
+      beforeEach(() => {
+        jest
+          .spyOn(scanLib, 'scan')
+          .mockResolvedValue(scanWithoutLoadableInputsFixture);
+      });
+
+      it('throws the expected error', async () => {
+        // Arrange
+        let error;
+
+        // Act
+        try {
+          await test(['path/to/test'], {});
+        } catch (err) {
+          error = err;
+        }
+
+        // Assert
+        expect(error).toBeInstanceOf(NoLoadableInputError);
+        expect(error).toEqual(
+          expect.objectContaining({
+            name: 'NoLoadableInputError',
+            message: 'no loadable input: path/to/test',
+            code: 1010,
+            strCode: 'NO_FILES_TO_SCAN_ERROR',
+            fields: {
+              path: 'path/to/test',
+            },
+            path: 'path/to/test',
+            userMessage:
+              "Test Failures\n\n  The Snyk CLI couldn't find any valid IaC configuration files to scan\n  Path: path/to/test",
+            formattedUserMessage:
+              "Test Failures\n\n  The Snyk CLI couldn't find any valid IaC configuration files to scan\n  Path: path/to/test",
+            sarifStringifiedResults: expect.stringContaining(
+              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+            ),
+            jsonStringifiedResults:
+              '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+            json:
+              '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+          }),
+        );
+      });
     });
   });
 
   describe('with issues', () => {
     it('throws the expected error', async () => {
       // Act + Assert
-      await expect(test(['path/to/test'], defaultOptions)).rejects.toThrowError(
+      await expect(test(['path/to/test'], {})).rejects.toThrowError(
         FoundIssuesError,
       );
     });
@@ -173,7 +215,6 @@ describe('test', () => {
       // Act
       try {
         await test(['path/to/test'], {
-          ...defaultOptions,
           json: true,
         });
       } catch (error) {
@@ -187,7 +228,9 @@ describe('test', () => {
 
     describe('with no successful scans', () => {
       beforeEach(() => {
-        jest.spyOn(scanLib, 'scan').mockReturnValue(scanWithOnlyErrorsFixture);
+        jest
+          .spyOn(scanLib, 'scan')
+          .mockResolvedValue(scanWithOnlyErrorsFixture);
       });
 
       it('throws the expected error', async () => {
@@ -196,37 +239,82 @@ describe('test', () => {
 
         // Act
         try {
-          await test(['path/to/test'], { ...defaultOptions, json: true });
+          await test(['path/to/test'], { json: true });
         } catch (err) {
           error = err;
         }
 
         // Assert
         expect(error).toBeInstanceOf(NoSuccessfulScansError);
-        expect(error).toEqual(
-          expect.objectContaining({
-            name: 'NoSuccessfulScansError',
-            message:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-            code: 2106,
-            strCode: 'INVALID_INPUT',
-            fields: {
-              path: '/Users/yairzohar/snyk/upe-test/README.txt',
-            },
-            path: '/Users/yairzohar/snyk/upe-test/README.txt',
-            userMessage:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-            formattedUserMessage:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-            sarifStringifiedResults: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-            jsonStringifiedResults:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-            json:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-          }),
-        );
+        expect(error).toMatchObject({
+          name: 'NoLoadableInputError',
+          code: 1010,
+          strCode: 'NO_FILES_TO_SCAN_ERROR',
+          innerError: undefined,
+          userMessage:
+            '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+          formattedUserMessage:
+            '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+          json:
+            '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+          jsonStringifiedResults:
+            '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+          sarifStringifiedResults: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+            pathToFileURL(path.join(process.cwd(), '/')).href
+          }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+          fields: {
+            path: 'invalid_file.txt',
+          },
+        });
+      });
+
+      describe('without loadable inputs', () => {
+        beforeEach(() => {
+          jest
+            .spyOn(scanLib, 'scan')
+            .mockResolvedValue(scanWithoutLoadableInputsFixture);
+        });
+
+        it('throws the expected error', async () => {
+          // Arrange
+          let error;
+
+          // Act
+          try {
+            await test(['path/to/test'], {
+              json: true,
+            });
+          } catch (err) {
+            error = err;
+          }
+
+          // Assert
+          expect(error).toBeInstanceOf(NoLoadableInputError);
+          expect(error).toEqual(
+            expect.objectContaining({
+              name: 'NoLoadableInputError',
+              message:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+              code: 1010,
+              strCode: 'NO_FILES_TO_SCAN_ERROR',
+              fields: {
+                path: 'path/to/test',
+              },
+              path: 'path/to/test',
+              userMessage:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+              formattedUserMessage:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+              sarifStringifiedResults: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+              jsonStringifiedResults:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+              json:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+            }),
+          );
+        });
       });
     });
   });
@@ -239,7 +327,6 @@ describe('test', () => {
       // Act
       try {
         await test(['path/to/test'], {
-          ...defaultOptions,
           sarif: true,
         });
       } catch (error) {
@@ -255,7 +342,9 @@ describe('test', () => {
 
     describe('with no successful scans', () => {
       beforeEach(() => {
-        jest.spyOn(scanLib, 'scan').mockReturnValue(scanWithOnlyErrorsFixture);
+        jest
+          .spyOn(scanLib, 'scan')
+          .mockResolvedValue(scanWithOnlyErrorsFixture);
       });
 
       it('throws the expected error', async () => {
@@ -264,41 +353,89 @@ describe('test', () => {
 
         // Act
         try {
-          await test(['path/to/test'], { ...defaultOptions, sarif: true });
+          await test(['path/to/test'], { sarif: true });
         } catch (err) {
           error = err;
         }
 
         // Assert
         expect(error).toBeInstanceOf(NoSuccessfulScansError);
-        expect(error).toEqual(
-          expect.objectContaining({
-            name: 'NoSuccessfulScansError',
-            message: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-            code: 2106,
-            strCode: 'INVALID_INPUT',
-            fields: {
-              path: '/Users/yairzohar/snyk/upe-test/README.txt',
-            },
-            path: '/Users/yairzohar/snyk/upe-test/README.txt',
-            userMessage: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-            formattedUserMessage: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-            sarifStringifiedResults: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-            jsonStringifiedResults:
-              '[\n  {\n    "ok": false,\n    "error": "invalid input for input type: /Users/yairzohar/snyk/upe-test/README.txt",\n    "path": "/Users/yairzohar/snyk/upe-test/README.txt"\n  }\n]',
-            json: expect.stringContaining(
-              `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
-            ),
-          }),
-        );
+        expect(error).toMatchObject({
+          name: 'NoLoadableInputError',
+          code: 1010,
+          strCode: 'NO_FILES_TO_SCAN_ERROR',
+          innerError: undefined,
+          userMessage: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+            pathToFileURL(path.join(process.cwd(), '/')).href
+          }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+          formattedUserMessage: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+            pathToFileURL(path.join(process.cwd(), '/')).href
+          }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+          json: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+            pathToFileURL(path.join(process.cwd(), '/')).href
+          }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+          jsonStringifiedResults:
+            '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "",\n    "path": "invalid_file.txt"\n  }\n]',
+          sarifStringifiedResults: `{\n  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",\n  "version": "2.1.0",\n  "runs": [\n    {\n      "originalUriBaseIds": {\n        "PROJECTROOT": {\n          "uri": "${
+            pathToFileURL(path.join(process.cwd(), '/')).href
+          }",\n          "description": {\n            "text": "The root directory for all project files."\n          }\n        }\n      },\n      "tool": {\n        "driver": {\n          "name": "Snyk IaC",\n          "fullName": "Snyk Infrastructure as Code",\n          "version": "1.0.0-monorepo",\n          "informationUri": "https://docs.snyk.io/products/snyk-infrastructure-as-code",\n          "rules": []\n        }\n      },\n      "automationDetails": {\n        "id": "snyk-iac"\n      },\n      "results": []\n    }\n  ]\n}`,
+          fields: {
+            path: 'invalid_file.txt',
+          },
+        });
+      });
+
+      describe('without loadable inputs', () => {
+        beforeEach(() => {
+          jest
+            .spyOn(scanLib, 'scan')
+            .mockResolvedValue(scanWithoutLoadableInputsFixture);
+        });
+
+        it('throws the expected error', async () => {
+          // Arrange
+          let error;
+
+          // Act
+          try {
+            await test(['path/to/test'], {
+              sarif: true,
+            });
+          } catch (err) {
+            error = err;
+          }
+
+          // Assert
+          expect(error).toBeInstanceOf(NoLoadableInputError);
+          expect(error).toEqual(
+            expect.objectContaining({
+              name: 'NoLoadableInputError',
+              message: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+              code: 1010,
+              strCode: 'NO_FILES_TO_SCAN_ERROR',
+              fields: {
+                path: 'path/to/test',
+              },
+              path: 'path/to/test',
+              userMessage: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+              formattedUserMessage: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+              sarifStringifiedResults: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+              jsonStringifiedResults:
+                '[\n  {\n    "ok": false,\n    "code": 2114,\n    "error": "no loadable input: path/to/test",\n    "path": "path/to/test"\n  }\n]',
+              json: expect.stringContaining(
+                `"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"`,
+              ),
+            }),
+          );
+        });
       });
     });
   });

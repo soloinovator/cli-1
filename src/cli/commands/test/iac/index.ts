@@ -13,8 +13,8 @@ import config from '../../../../lib/config';
 import { UnsupportedEntitlementError } from '../../../../lib/errors/unsupported-entitlement-error';
 import { scan } from './scan';
 import { buildOutput, buildSpinner, printHeader } from './output';
-import { Options, TestOptions } from '../../../../lib/types';
 import { InvalidArgumentError } from './local-execution/assert-iac-options-flag';
+import { IaCTestFlags } from './local-execution/types';
 
 export default async function(...args: MethodArgs): Promise<TestCommandResult> {
   const { options: originalOptions, paths } = processCommandArgs(...args);
@@ -34,11 +34,6 @@ export default async function(...args: MethodArgs): Promise<TestCommandResult> {
 
   const buildOciRegistry = () => buildDefaultOciRegistry(iacOrgSettings);
 
-  const isNewIacOutputSupported = Boolean(
-    config.IAC_OUTPUT_V2 ||
-      (await hasFeatureFlag('iacCliOutputRelease', options)),
-  );
-
   const isIacShareCliResultsCustomRulesSupported = Boolean(
     await hasFeatureFlag('iacShareCliResultsCustomRules', options),
   );
@@ -47,24 +42,17 @@ export default async function(...args: MethodArgs): Promise<TestCommandResult> {
     iacOrgSettings.entitlements?.iacCustomRulesEntitlement,
   );
 
-  const testSpinner = buildSpinner({
-    options,
-    isNewIacOutputSupported,
-  });
+  const testSpinner = buildSpinner(options);
 
   const projectRoot = process.cwd();
 
-  printHeader({
-    options,
-    isNewIacOutputSupported,
-  });
+  printHeader(options);
 
   const {
     iacOutputMeta,
     iacScanFailures,
     iacIgnoredIssuesCount,
     results,
-    resultOptions,
   } = await scan(
     iacOrgSettings,
     options,
@@ -80,18 +68,19 @@ export default async function(...args: MethodArgs): Promise<TestCommandResult> {
   return buildOutput({
     results,
     options,
-    isNewIacOutputSupported,
     isIacShareCliResultsCustomRulesSupported,
     isIacCustomRulesEntitlementEnabled,
     iacOutputMeta,
-    resultOptions,
     iacScanFailures,
     iacIgnoredIssuesCount,
     testSpinner,
   });
 }
 
-function getFlag(options: Options & TestOptions, flag: string) {
+export function getFlag(
+  options: IaCTestFlags,
+  flag: string,
+): string | undefined {
   const flagValue = options[flag];
 
   if (!flagValue) {

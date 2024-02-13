@@ -8,6 +8,7 @@ import { icon } from '../theme';
 import { parsePackageString as moduleToObject } from 'snyk-module';
 import * as depGraphLib from '@snyk/dep-graph';
 import * as theme from '../../lib/theme';
+import * as pMap from 'p-map';
 
 import {
   AffectedPackages,
@@ -21,19 +22,21 @@ import {
 } from './legacy';
 import {
   AuthFailedError,
+  BadGatewayError,
   DockerImageNotFoundError,
+  errorMessageWithRetry,
   FailedToGetVulnerabilitiesError,
   FailedToGetVulnsFromUnavailableResource,
   FailedToRunTestError,
   InternalServerError,
   NoSupportedManifestsFoundError,
-  UnsupportedFeatureFlagError,
   NotFoundError,
-  errorMessageWithRetry,
+  ServiceUnavailableError,
 } from '../errors';
 import * as snyk from '../';
 import { isCI } from '../is-ci';
 import * as common from './common';
+import { RETRY_ATTEMPTS, RETRY_DELAY } from './common';
 import config from '../config';
 import * as analytics from '../analytics';
 import { maybePrintDepGraph, maybePrintDepTree } from '../print-deps';
@@ -54,28 +57,26 @@ import {
 } from '../plugins/get-multi-plugin-result';
 import { extractPackageManager } from '../plugins/extract-package-manager';
 import { getExtraProjectCount } from '../plugins/get-extra-project-count';
-import { serializeCallGraphWithMetrics } from '../reachable-vulns';
-import { validateOptions } from '../options-validator';
 import { findAndLoadPolicy } from '../policy';
 import {
+  DepTreeFromResolveDeps,
   Payload,
   PayloadBody,
-  DepTreeFromResolveDeps,
   TestDependenciesRequest,
 } from './types';
-import { CallGraphError, CallGraph } from '@snyk/cli-interface/legacy/common';
-import * as alerts from '../alerts';
-import { abridgeErrorMessage } from '../error-format';
 import { getAuthHeader } from '../api-token';
 import { getEcosystem } from '../ecosystems';
 import { Issue } from '../ecosystems/types';
 import { assembleEcosystemPayloads } from './assemble-payloads';
 import { makeRequest } from '../request';
 import { spinner } from '../spinner';
+import { hasUnknownVersions } from '../dep-graph';
+import { sleep } from '../common';
 
 const debug = debugModule('snyk:run-test');
 
-const ANALYTICS_PAYLOAD_MAX_LENGTH = 1024;
+// Controls the number of simultaneous test requests that can be in-flight.
+const MAX_CONCURRENCY = 5;
 
 function prepareResponseForParsing(
   payload: Payload,
@@ -129,6 +130,7 @@ function prepareEcosystemResponseForParsing(
     payloadPolicy: payloadBody?.policy,
     platform,
     scanResult: payloadBody,
+    hasUnknownVersions: hasUnknownVersions(depGraph),
   };
 }
 
@@ -164,6 +166,7 @@ function prepareLanguagesResponseForParsing(payload: Payload) {
     foundProjectCount,
     displayTargetFile,
     dockerfilePackages,
+    hasUnknownVersions: hasUnknownVersions(depGraph),
   };
 }
 
@@ -223,14 +226,56 @@ async function sendAndParseResults(
   options: Options & TestOptions,
 ): Promise<TestResult[]> {
   const results: TestResult[] = [];
-  for (const payload of payloads) {
-    await spinner.clear<void>(spinnerLbl)();
-    if (!options.quiet) {
-      await spinner(spinnerLbl);
+
+  await spinner.clear<void>(spinnerLbl)();
+  if (!options.quiet) {
+    await spinner(spinnerLbl);
+  }
+
+  type TestResponse = {
+    payload: Payload;
+    originalPayload: Payload;
+    response: any;
+  };
+
+  const sendRequest = async (
+    originalPayload: Payload,
+  ): Promise<TestResponse> => {
+    let step = 0;
+    let error;
+
+    while (step < RETRY_ATTEMPTS) {
+      debug(`sendTestPayload retry step ${step} out of ${RETRY_ATTEMPTS}`);
+      try {
+        /** sendTestPayload() deletes the request.body from the payload once completed. */
+        const payload = Object.assign({}, originalPayload);
+        const response = await sendTestPayload(payload);
+
+        return { payload, originalPayload, response };
+      } catch (err) {
+        error = err;
+        step++;
+
+        if (
+          err instanceof InternalServerError ||
+          err instanceof BadGatewayError ||
+          err instanceof ServiceUnavailableError
+        ) {
+          await sleep(RETRY_DELAY);
+        } else {
+          break;
+        }
+      }
     }
-    /** sendTestPayload() deletes the request.body from the payload once completed. */
-    const payloadCopy = Object.assign({}, payload);
-    const res = await sendTestPayload(payload);
+
+    throw error;
+  };
+
+  const responses = await pMap(payloads, sendRequest, {
+    concurrency: MAX_CONCURRENCY,
+  });
+
+  for (const { payload, originalPayload, response } of responses) {
     const {
       depGraph,
       payloadPolicy,
@@ -242,9 +287,10 @@ async function sendAndParseResults(
       dockerfilePackages,
       platform,
       scanResult,
+      hasUnknownVersions,
     } = prepareResponseForParsing(
-      payloadCopy,
-      res as TestDependenciesResponse,
+      originalPayload,
+      response as TestDependenciesResponse,
       options,
     );
 
@@ -254,7 +300,7 @@ async function sendAndParseResults(
       await maybePrintDepGraph(options, depGraph);
     }
 
-    const legacyRes = convertIssuesToAffectedPkgs(res);
+    const legacyRes = convertIssuesToAffectedPkgs(response);
 
     const result = await parseRes(
       depGraph,
@@ -275,6 +321,7 @@ async function sendAndParseResults(
       displayTargetFile,
       platform,
       scanResult,
+      hasUnknownVersions,
     });
   }
   return results;
@@ -287,8 +334,13 @@ export async function runTest(
 ): Promise<TestResult[]> {
   const spinnerLbl = 'Querying vulnerabilities database...';
   try {
-    await validateOptions(options, options.packageManager);
     const payloads = await assemblePayloads(root, options);
+
+    if (options['print-graph'] && !options['print-deps']) {
+      const results: TestResult[] = [];
+      return results;
+    }
+
     return await sendAndParseResults(payloads, spinnerLbl, root, options);
   } catch (error) {
     debug('Error running test', { error });
@@ -324,6 +376,7 @@ export async function runTest(
         error.message ||
         `Failed to test ${projectType} project`,
       error.code,
+      error.innerError,
     );
   } finally {
     spinner.clear<void>(spinnerLbl)();
@@ -444,6 +497,9 @@ function sendTestPayload(
       }
       if (res.statusCode !== 200) {
         const err = handleTestHttpErrorResponse(res, body);
+        debug('sendTestPayload request URL:', payload.url);
+        debug('sendTestPayload response status code:', res.statusCode);
+        debug('sendTestPayload response body:', body);
         return reject(err);
       }
 
@@ -461,18 +517,22 @@ function handleTestHttpErrorResponse(res, body) {
     case 401:
     case 403:
       err = AuthFailedError(userMessage, statusCode);
-      err.innerError = body.stack;
+      err.innerError = body.stack || body;
       break;
     case 404:
       err = new NotFoundError(userMessage);
       err.innerError = body.stack;
       break;
-    case 405:
-      err = new UnsupportedFeatureFlagError('reachableVulns');
-      err.innerError = body.stack;
-      break;
     case 500:
       err = new InternalServerError(userMessage);
+      err.innerError = body.stack;
+      break;
+    case 502:
+      err = new BadGatewayError(userMessage);
+      err.innerError = body.stack;
+      break;
+    case 503:
+      err = new ServiceUnavailableError(userMessage);
       err.innerError = body.stack;
       break;
     default:
@@ -614,6 +674,7 @@ async function assembleLocalPayloads(
           maybePrintDepTree(options, pkg as DepTree);
         }
       }
+
       const project = scannedProject as ScannedProjectCustom;
       const packageManager = extractPackageManager(project, deps, options);
 
@@ -683,6 +744,25 @@ async function assembleLocalPayloads(
         ? (pkg as depGraphLib.DepGraph).rootPkg.name
         : (pkg as DepTree).name;
 
+      // print dep graph if `--print-graph` is set
+      if (options['print-graph'] && !options['print-deps']) {
+        spinner.clear<void>(spinnerLbl)();
+        let root: depGraphLib.DepGraph;
+        if (scannedProject.depGraph) {
+          root = pkg as depGraphLib.DepGraph;
+        } else {
+          const tempDepTree = pkg as DepTree;
+          root = await depGraphLib.legacy.depTreeToGraph(
+            tempDepTree,
+            packageManager ? packageManager : '',
+          );
+        }
+
+        console.log(
+          common.depGraphToOutputString(root.toJSON(), targetFile || ''),
+        );
+      }
+
       const body: PayloadBody = {
         // WARNING: be careful changing this as it affects project uniqueness
         targetFile: project.plugin.targetFile,
@@ -726,46 +806,6 @@ async function assembleLocalPayloads(
       }
       body.depGraph = depGraph;
 
-      if (
-        options.reachableVulns &&
-        (scannedProject.callGraph as CallGraphError)?.message
-      ) {
-        const err = scannedProject.callGraph as CallGraphError;
-        const analyticsError = err.innerError || err;
-        analytics.add('callGraphError', {
-          errorType: analyticsError.constructor?.name,
-          message: abridgeErrorMessage(
-            analyticsError.message.toString(),
-            ANALYTICS_PAYLOAD_MAX_LENGTH,
-          ),
-        });
-        alerts.registerAlerts([
-          {
-            type: 'error',
-            name: 'missing-call-graph',
-            msg: err.message,
-          },
-        ]);
-      } else if (scannedProject.callGraph) {
-        const {
-          callGraph,
-          nodeCount,
-          edgeCount,
-        } = serializeCallGraphWithMetrics(
-          scannedProject.callGraph as CallGraph,
-        );
-        debug(
-          `Adding call graph to payload, node count: ${nodeCount}, edge count: ${edgeCount}`,
-        );
-
-        const callGraphMetrics = get(deps.plugin, 'meta.callGraphMetrics', {});
-        analytics.add('callGraphMetrics', {
-          callGraphEdgeCount: edgeCount,
-          callGraphNodeCount: nodeCount,
-          ...callGraphMetrics,
-        });
-        body.callGraph = callGraph;
-      }
       const reqUrl =
         config.API +
         (options.testDepGraphDockerEndpoint ||

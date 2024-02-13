@@ -100,7 +100,7 @@ function formatScanResult(
       severity: policy.severity,
       lineNumber,
       documentation: !isGeneratedByCustomRule
-        ? `https://snyk.io/security-rules/${policy.publicId}`
+        ? `https://security.snyk.io/rules/cloud/${policy.publicId}`
         : undefined,
       isGeneratedByCustomRule,
     };
@@ -122,7 +122,9 @@ function formatScanResult(
     meta: {
       ...meta,
       projectId: '', // we do not have a project at this stage
-      policy: '', // we do not have the concept of policy
+      policy: '',
+      isPrivate: true,
+      isLicensesEnabled: false,
     },
     filesystemPolicy: false, // we do not have the concept of policy
     vulnerabilities: [],

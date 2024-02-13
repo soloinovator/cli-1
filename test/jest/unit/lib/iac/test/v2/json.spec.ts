@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { IacOrgSettings } from '../../../../../../../src/cli/commands/test/iac/local-execution/types';
 import { SnykIacTestError } from '../../../../../../../src/lib/iac/test/v2/errors';
 import {
   convertEngineToJsonResults,
@@ -30,7 +29,7 @@ describe('convertEngineToJsonResults', () => {
     return isError ? new SnykIacTestError(item) : item;
   });
 
-  const experimentalJsonOutputFixtureContent = fs.readFileSync(
+  const integratedJsonOutputFixtureContent = fs.readFileSync(
     path.join(
       __dirname,
       '..',
@@ -40,40 +39,30 @@ describe('convertEngineToJsonResults', () => {
       'iac',
       'process-results',
       'fixtures',
-      'experimental-json-output.json',
+      'integrated-json-output.json',
     ),
     'utf-8',
   );
-  let experimentalJsonOutputFixture: Array<Result | ScanError> = JSON.parse(
-    experimentalJsonOutputFixtureContent,
+  let integratedJsonOutputFixture: Array<Result | ScanError> = JSON.parse(
+    integratedJsonOutputFixtureContent,
   );
 
-  experimentalJsonOutputFixture = experimentalJsonOutputFixture.map((item) =>
+  integratedJsonOutputFixture = integratedJsonOutputFixture.map((item) =>
     !('error' in item) ? { ...item, path: process.cwd() } : item,
   );
-
-  const orgSettings: IacOrgSettings = {
-    meta: {
-      isPrivate: false,
-      isLicensesEnabled: false,
-      ignoreSettings: null,
-      org: 'org-name',
-    },
-    customPolicies: {},
-    customRules: {},
-    entitlements: {
-      infrastructureAsCode: true,
-      iacCustomRulesEntitlement: true,
-    },
-  };
 
   it('returns expected JSON result', () => {
     const result = convertEngineToJsonResults({
       results: snykIacTestFixture,
       projectName: 'org-name',
-      orgSettings,
     });
 
-    expect(result).toEqual(experimentalJsonOutputFixture);
+    integratedJsonOutputFixture.forEach((item) => {
+      if ('targetFilePath' in item) {
+        item.targetFilePath = path.resolve(item.targetFile);
+      }
+    });
+
+    expect(result).toEqual(integratedJsonOutputFixture);
   });
 });

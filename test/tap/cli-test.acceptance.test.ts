@@ -14,6 +14,7 @@ export interface AcceptanceTests {
 import { GenericTests } from './cli-test/cli-test.generic.spec';
 
 import { CocoapodsTests } from './cli-test/cli-test.cocoapods.spec';
+import { SwiftTests } from './cli-test/cli-test.swift.spec';
 import { ComposerTests } from './cli-test/cli-test.composer.spec';
 import { DockerTests } from './cli-test/cli-test.docker.spec';
 import { GoTests } from './cli-test/cli-test.go.spec';
@@ -44,6 +45,7 @@ const languageTests: AcceptanceTests[] = [
   YarnTests,
   YarnWorkspacesTests,
   ElixirTests,
+  SwiftTests,
 ];
 
 const { test, only } = tap;
@@ -65,6 +67,7 @@ const after = tap.runOnly ? only : test;
 // Should be after `process.env` setup.
 import * as plugins from '../../src/lib/plugins/index';
 import * as ecoSystemPlugins from '../../src/lib/ecosystems/plugins';
+import { snykHttpClient } from '../../src/lib/request/snyk-http-client';
 
 /*
   TODO: enable these tests, once we switch from node-tap
@@ -110,6 +113,7 @@ test(GenericTests.language, async (t) => {
         { chdirWorkspaces },
       ),
     );
+    server.restore();
   }
 });
 
@@ -122,6 +126,7 @@ test(AllProjectsTests.language, async (t) => {
         { chdirWorkspaces },
       ),
     );
+    server.restore();
   }
 });
 
@@ -134,6 +139,7 @@ test('Languages', async (t) => {
           languageTest.tests[testName](
             { server, plugins, ecoSystemPlugins, versionNumber, cli },
             { chdirWorkspaces },
+            snykHttpClient,
           ),
         );
         server.restore();

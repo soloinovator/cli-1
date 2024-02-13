@@ -230,6 +230,11 @@ describe('getProjectNameFromGitUrl', () => {
 
     'git@github.com:user/repo.git',
 
+    // Remote URLs set up by 'actions/checkout' in GitHub workflows.
+
+    'https://github.com/user/repo',
+    'http://github.com/user/repo',
+
     // If everything else fails, the URL should be returned as-is, but trimmed.
 
     'user/repo',
@@ -249,6 +254,7 @@ function orgSettingsFor(org) {
       isPrivate: false,
       isLicensesEnabled: false,
       org,
+      orgPublicId: '7bfa4159-6f90-4acd-82a4-0b2ad2aaf80b',
     },
   };
 }

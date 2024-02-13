@@ -9,6 +9,7 @@ export default {
     clean: true,
     path: path.resolve(__dirname, 'dist/cli/'),
     filename: 'index.js',
+    hashFunction: 'sha256',
     library: {
       name: 'snyk',
       type: 'commonjs2',
@@ -20,10 +21,6 @@ export default {
       patterns: [
         // All of these plugins rely on a init.gradle or similar file in a specific location
         // We should upgrade those npm packages to statically load these, instead of relying on a file location
-        {
-          from: 'node_modules/@snyk/java-call-graph-builder/bin/init.gradle',
-          to: '../bin',
-        },
         {
           from: 'node_modules/snyk-gradle-plugin/lib/init.gradle',
           to: '../lib',
@@ -47,11 +44,6 @@ export default {
         {
           from: 'node_modules/sql.js/dist/sql-wasm.wasm',
           to: './',
-        },
-        {
-          from:
-            'node_modules/@snyk/java-call-graph-builder/config.default.json',
-          to: '../',
         },
       ],
     }),

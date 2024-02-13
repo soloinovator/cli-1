@@ -8,15 +8,12 @@ import {
 } from '../../../lib/types';
 import { isLocalFolder } from '../../../lib/detect';
 import { TestResult } from '../../../lib/snyk-test/legacy';
-import { IacTestResponse } from '../../../lib/snyk-test/iac-test-result';
 
 import {
   dockerRemediationForDisplay,
   formatTestMeta,
 } from '../../../lib/formatters';
-import { getIacDisplayedOutput } from '../../../lib/formatters/iac-output';
 import {
-  IacProjectType,
   IacProjectTypes,
   TEST_SUPPORTED_IAC_PROJECTS,
 } from '../../../lib/iac/constants';
@@ -25,6 +22,7 @@ import {
   getDisplayedOutput,
 } from '../../../lib/formatters/test/format-test-results';
 import { showMultiScanTip } from '../show-multi-scan-tip';
+import * as theme from '../../theme';
 
 export function displayResult(
   res: TestResult,
@@ -69,6 +67,13 @@ export function displayResult(
   );
   const multiProjAdvice = multiProjectTip ? `\n\n${multiProjectTip}` : '';
 
+  const warningMessage = theme.color.status.warn(
+    `${theme.icon.WARNING} Warning!`,
+  );
+  const hasUnknownVersions = res.hasUnknownVersions
+    ? `\n\n${warningMessage} Some dependencies in this project could not be identified.`
+    : '';
+
   // OK  => no vulns found, return
   if (res.ok && res.vulnerabilities.length === 0) {
     const vulnPathsText = options.showVulnPaths
@@ -101,21 +106,11 @@ export function displayResult(
       meta +
       '\n\n' +
       summaryOKText +
+      hasUnknownVersions +
       multiProjAdvice +
       (isCI()
         ? ''
         : dockerAdvice + nextStepsText + snykPackageTestTip + dockerCTA)
-    );
-  }
-
-  if (
-    TEST_SUPPORTED_IAC_PROJECTS.includes(res.packageManager as IacProjectType)
-  ) {
-    return getIacDisplayedOutput(
-      (res as any) as IacTestResponse,
-      testedInfoText,
-      meta,
-      prefix,
     );
   }
 
@@ -129,6 +124,7 @@ export function displayResult(
     projectType,
     meta,
     prefix,
+    hasUnknownVersions,
     multiProjAdvice,
     dockerAdvice,
   );

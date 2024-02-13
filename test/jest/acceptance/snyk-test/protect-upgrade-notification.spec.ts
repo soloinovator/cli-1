@@ -51,6 +51,9 @@ describe('analytics module', () => {
     );
     expect(stdout).toContain(project.path('package.json'));
 
+    // in this case an extra analytics event is being sent, which needs to be dropped
+    server.popRequest();
+
     const lastRequest = server.popRequest();
     expect(lastRequest).toMatchObject({
       query: {},
@@ -81,6 +84,9 @@ describe('analytics module', () => {
       'WARNING: It looks like you have the `snyk` dependency in the `package.json` file(s) at the following path(s):',
     );
     expect(stdout).toContain(project.path('package.json'));
+
+    // in this case an extra analytics event is being sent, which needs to be dropped
+    server.popRequest();
 
     const lastRequest = server.popRequest();
     expect(lastRequest).toMatchObject({
@@ -128,6 +134,9 @@ describe('analytics module', () => {
       project.path('with-package-json-without-snyk-dep/package.json'),
     );
 
+    // in this case an extra analytics event is being sent, which needs to be dropped
+    server.popRequest();
+
     const lastRequest = server.popRequest();
     expect(lastRequest).toMatchObject({
       query: {},
@@ -157,6 +166,9 @@ describe('analytics module', () => {
       'WARNING: It looks like you have the `snyk` dependency in the `package.json` file(s) at the following path(s):',
     );
     expect(stdout).not.toContain(project.path('package.json'));
+
+    // in this case an extra analytics event is being sent, which needs to be dropped
+    server.popRequest();
 
     const lastRequest = server.popRequest();
     expect(lastRequest).toMatchObject({

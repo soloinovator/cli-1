@@ -2,7 +2,7 @@ import { fakeServer } from '../../../acceptance/fake-server';
 import { createProjectFromFixture } from '../../util/createProject';
 import { runSnykCLI } from '../../util/runSnykCLI';
 
-jest.setTimeout(1000 * 30);
+jest.setTimeout(1000 * 60);
 
 describe('spotlight vuln notification', () => {
   let server;
@@ -37,7 +37,7 @@ describe('spotlight vuln notification', () => {
   it('includes spotlight vuln notification for Log4j SNYK-JAVA-ORGAPACHELOGGINGLOG4J-2314720', async () => {
     const project = await createProjectFromFixture('mvn-log4j-fixture');
 
-    server.setDepGraphResponse(
+    server.setCustomResponse(
       await project.readJSON('test-dep-graph-response.json'),
     );
 

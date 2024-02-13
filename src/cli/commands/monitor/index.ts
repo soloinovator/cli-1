@@ -3,8 +3,8 @@ import * as fs from 'fs';
 import * as Debug from 'debug';
 import * as pathUtil from 'path';
 import { legacyPlugin as pluginApi } from '@snyk/cli-interface';
-import { validateOptions } from '../../../lib/options-validator';
 import { checkOSSPaths } from '../../../lib/check-paths';
+import * as theme from '../../../lib/theme';
 
 import {
   MonitorOptions,
@@ -48,9 +48,15 @@ import { isMultiProjectScan } from '../../../lib/is-multi-project-scan';
 import { getEcosystem, monitorEcosystem } from '../../../lib/ecosystems';
 import { getFormattedMonitorOutput } from '../../../lib/ecosystems/monitor';
 import { processCommandArgs } from '../process-command-args';
+import { hasFeatureFlag } from '../../../lib/feature-flags';
 
 const SEPARATOR = '\n-------------------------------------------------------\n';
 const debug = Debug('snyk');
+const appVulnsReleaseWarningMsg = `${theme.icon.WARNING} Important: Beginning January 24th, 2023, application dependencies in container
+images will be scanned by default when using the snyk container test/monitor
+commands. If you are using Snyk in a CI pipeline, action may be required. Read
+https://snyk.io/blog/securing-container-applications-using-the-snyk-cli/ for
+more info.`;
 
 // This is used instead of `let x; try { x = await ... } catch { cleanup }` to avoid
 // declaring the type of x as possibly undefined.
@@ -87,10 +93,33 @@ export default async function monitor(...args0: MethodArgs): Promise<any> {
   if (options.docker && options['remote-repo-url']) {
     throw new Error('`--remote-repo-url` is not supported for container scans');
   }
+  if (options.docker) {
+    // order is important here, we want:
+    // 1) exclude-app-vulns set -> no app vulns
+    // 2) app-vulns set -> app-vulns
+    // 3) neither set -> containerAppVulnsEnabled
+    if (options['exclude-app-vulns']) {
+      options['exclude-app-vulns'] = true;
+    } else if (options['app-vulns']) {
+      options['exclude-app-vulns'] = false;
+    } else {
+      options['exclude-app-vulns'] = !(await hasFeatureFlag(
+        'containerCliAppVulnsEnabled',
+        options,
+      ));
 
-  // TODO remove once https://github.com/snyk/cli/pull/3433 is merged
-  if (options.docker && !options['app-vulns']) {
-    options['exclude-app-vulns'] = true;
+      // we can't print the warning message with JSON output as that would make
+      // the JSON output invalid.
+      // We also only want to print the message if the user did not overwrite
+      // the default with one of the flags.
+      if (
+        options['exclude-app-vulns'] &&
+        !options['json'] &&
+        !options['sarif']
+      ) {
+        console.log(theme.color.status.warn(appVulnsReleaseWarningMsg));
+      }
+    }
   }
 
   // Handles no image arg provided to the container command until
@@ -143,12 +172,16 @@ export default async function monitor(...args0: MethodArgs): Promise<any> {
       } else {
         packageManager = detect.detectPackageManager(path, options);
       }
-
-      await validateOptions(
-        options as Options & MonitorOptions,
-        packageManager,
+      const unsupportedPackageManagers: Array<{
+        label: string;
+        name: string;
+      }> = [];
+      const unsupportedPackageManager = unsupportedPackageManagers.find(
+        (pm) => pm.name === packageManager,
       );
-
+      if (unsupportedPackageManager) {
+        return `${unsupportedPackageManager.label} projects do not currently support "snyk monitor"`;
+      }
       const targetFile =
         !options.scanAllUnmanaged && options.docker && !options.file // snyk monitor --docker (without --file)
           ? undefined
